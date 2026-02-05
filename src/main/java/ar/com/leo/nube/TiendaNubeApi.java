@@ -104,16 +104,27 @@ public class TiendaNubeApi {
             }
 
             for (JsonNode order : ordersArray) {
+                long orderId = order.path("id").asLong(0);
                 JsonNode products = order.path("products");
                 if (!products.isArray()) continue;
 
                 for (JsonNode product : products) {
                     String sku = product.path("sku").asString("");
                     double quantity = product.path("quantity").asDouble(0);
+                    String productName = product.path("name").asString("");
 
-                    if (!sku.isBlank() && quantity > 0) {
-                        ventas.add(new Venta(sku, quantity, label));
+                    if (quantity <= 0) {
+                        AppLogger.warn("NUBE (" + label + ") - Producto con cantidad inválida en orden " + orderId + ": " + sku);
+                        String errorSku = sku.isBlank() ? productName : sku;
+                        ventas.add(new Venta("CANT INVALIDA: " + errorSku, quantity, label));
+                        continue;
                     }
+                    if (sku.isBlank()) {
+                        AppLogger.warn("NUBE (" + label + ") - Producto sin SKU en orden " + orderId + ": " + productName);
+                        ventas.add(new Venta("SIN SKU: " + productName, quantity, label));
+                        continue;
+                    }
+                    ventas.add(new Venta(sku, quantity, label));
                 }
             }
 
@@ -126,6 +137,70 @@ public class TiendaNubeApi {
 
         AppLogger.info("NUBE (" + label + ") - Ventas obtenidas: " + ventas.size());
         return ventas;
+    }
+
+    /**
+     * Obtiene el stock de un producto por SKU buscando en todas las tiendas.
+     * @param sku SKU del producto
+     * @return Stock total o -1 si no se encuentra
+     */
+    public static int obtenerStockPorSku(String sku) {
+        if (credentials == null || credentials.stores == null) {
+            return -1;
+        }
+
+        // Buscar en todas las tiendas
+        for (StoreCredentials store : credentials.stores.values()) {
+            int stock = obtenerStockEnTienda(store, sku);
+            if (stock >= 0) {
+                return stock;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Obtiene el stock de un producto por SKU en una tienda específica.
+     * Usa el endpoint /products/sku/{sku} que devuelve el primer producto
+     * donde una de sus variantes tiene el SKU dado.
+     */
+    private static int obtenerStockEnTienda(StoreCredentials store, String sku) {
+        String url = String.format(
+                "https://api.tiendanube.com/v1/%s/products/sku/%s",
+                store.storeId, java.net.URLEncoder.encode(sku, java.nio.charset.StandardCharsets.UTF_8));
+
+        Supplier<HttpRequest> requestBuilder = () -> HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .header("Authentication", "bearer " + store.accessToken)
+                .header("User-Agent", "Pickit")
+                .header("Content-Type", "application/json")
+                .GET()
+                .build();
+
+        HttpResponse<String> response = retryHandler.sendWithRetry(requestBuilder);
+
+        if (response == null || response.statusCode() != 200) {
+            return -1;
+        }
+
+        try {
+            JsonNode product = mapper.readTree(response.body());
+
+            // El endpoint devuelve un objeto producto directamente
+            JsonNode variants = product.path("variants");
+            if (variants.isArray()) {
+                for (JsonNode variant : variants) {
+                    String variantSku = variant.path("sku").asString("");
+                    if (sku.equals(variantSku)) {
+                        return variant.path("stock").asInt(0);
+                    }
+                }
+            }
+            return -1;
+        } catch (Exception e) {
+            AppLogger.warn("NUBE - Error al obtener stock de SKU " + sku + ": " + e.getMessage());
+            return -1;
+        }
     }
 
     private static StoreCredentials getStore(String storeName) {

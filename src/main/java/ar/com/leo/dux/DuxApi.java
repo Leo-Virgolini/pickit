@@ -4,6 +4,7 @@ import ar.com.leo.AppLogger;
 import ar.com.leo.HttpRetryHandler;
 import ar.com.leo.dux.model.DuxResponse;
 import ar.com.leo.dux.model.Item;
+import ar.com.leo.dux.model.Stock;
 import ar.com.leo.dux.model.TokensDux;
 import tools.jackson.databind.ObjectMapper;
 
@@ -158,6 +159,36 @@ public class DuxApi {
         }
 
         return null;
+    }
+
+    /**
+     * Obtiene el stock disponible de un producto por su código.
+     * @param codigoItem Código del producto
+     * @return Stock disponible o -1 si no se encuentra
+     */
+    public static int obtenerStockPorCodigo(String codigoItem) {
+        try {
+            Item item = obtenerProductoPorCodigo(codigoItem);
+            if (item == null || item.getStock() == null || item.getStock().isEmpty()) {
+                return -1;
+            }
+
+            // Sumar stock disponible de todas las ubicaciones
+            int totalStock = 0;
+            for (Stock stock : item.getStock()) {
+                String stockDisp = stock.getStockDisponible();
+                if (stockDisp != null && !stockDisp.isBlank()) {
+                    try {
+                        totalStock += (int) Double.parseDouble(stockDisp);
+                    } catch (NumberFormatException ignored) {
+                    }
+                }
+            }
+            return totalStock;
+        } catch (Exception e) {
+            AppLogger.warn("DUX - Error al obtener stock de " + codigoItem + ": " + e.getMessage());
+            return -1;
+        }
     }
 
     // TOKENS

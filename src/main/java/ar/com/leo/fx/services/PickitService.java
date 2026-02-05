@@ -1,7 +1,9 @@
 package ar.com.leo.fx.services;
 
 import ar.com.leo.AppLogger;
+import ar.com.leo.fx.model.ProductoManual;
 import javafx.application.Platform;
+import javafx.collections.ObservableList;
 import javafx.concurrent.Service;
 import javafx.concurrent.Task;
 import javafx.scene.control.TextArea;
@@ -14,11 +16,15 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public class PickitService extends Service<File> {
 
-    private final File pickitExcel;
+    private final File stockExcel;
+    private final File combosExcel;
+    private final List<ProductoManual> productosManuales;
     private final TextArea logTextArea;
 
-    public PickitService(File pickitExcel, TextArea logTextArea) {
-        this.pickitExcel = pickitExcel;
+    public PickitService(File stockExcel, File combosExcel, ObservableList<ProductoManual> productosManuales, TextArea logTextArea) {
+        this.stockExcel = stockExcel;
+        this.combosExcel = combosExcel;
+        this.productosManuales = new ArrayList<>(productosManuales);
         this.logTextArea = logTextArea;
     }
 
@@ -36,7 +42,7 @@ public class PickitService extends Service<File> {
                 });
 
                 try {
-                    return PickitGenerator.generarPickit(pickitExcel);
+                    return PickitGenerator.generarPickit(stockExcel, combosExcel, productosManuales);
                 } finally {
                     AppLogger.setUiLogger(null);
                 }

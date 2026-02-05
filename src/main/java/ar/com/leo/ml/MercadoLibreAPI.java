@@ -4,12 +4,12 @@ import ar.com.leo.AppLogger;
 import ar.com.leo.HttpRetryHandler;
 import ar.com.leo.ml.model.MLCredentials;
 import ar.com.leo.ml.model.TokensML;
+import ar.com.leo.pickit.model.OrdenML;
 import ar.com.leo.pickit.model.Venta;
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
-
 import javafx.application.Platform;
 import javafx.scene.control.TextInputDialog;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import java.io.File;
 import java.io.IOException;
@@ -20,6 +20,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.time.OffsetDateTime;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
@@ -27,6 +28,9 @@ import java.util.function.Supplier;
 import static ar.com.leo.HttpRetryHandler.BASE_SECRET_DIR;
 
 public class MercadoLibreAPI {
+
+    public record MLOrderResult(List<Venta> ventas, List<OrdenML> ordenes) {
+    }
 
     private static final Path MERCADOLIBRE_FILE = BASE_SECRET_DIR.resolve("ml_credentials.json");
     private static final Path TOKEN_FILE = BASE_SECRET_DIR.resolve("ml_tokens.json");
@@ -59,10 +63,11 @@ public class MercadoLibreAPI {
     /**
      * Obtiene las ventas de ML con etiqueta lista para imprimir (ready_to_print).
      */
-    public static List<Venta> obtenerVentasReadyToPrint(String userId) {
+    public static MLOrderResult obtenerVentasReadyToPrint(String userId) {
         verificarTokens();
 
         List<Venta> ventas = new ArrayList<>();
+        List<OrdenML> ordenes = new ArrayList<>();
         Set<Long> orderIdsSeen = new HashSet<>();
         int offset = 0;
         final int limit = 50;
@@ -99,6 +104,19 @@ public class MercadoLibreAPI {
                 long orderId = order.path("id").asLong();
                 if (!orderIdsSeen.add(orderId)) continue;
 
+                String dateCreated = order.path("date_created").asString("");
+                OffsetDateTime fecha = null;
+                if (!dateCreated.isBlank()) {
+                    try {
+                        fecha = OffsetDateTime.parse(dateCreated);
+                    } catch (Exception e) {
+                        AppLogger.warn("ML - Error al parsear fecha de orden " + orderId + ": " + dateCreated);
+                    }
+                }
+                JsonNode packNode = order.path("pack_id");
+                Long packId = packNode.isNull() || packNode.isMissingNode() ? null : packNode.asLong();
+                OrdenML ordenML = new OrdenML(orderId, packId, fecha);
+
                 JsonNode orderItems = order.path("order_items");
                 if (!orderItems.isArray()) continue;
 
@@ -108,11 +126,31 @@ public class MercadoLibreAPI {
                     if (sku.isBlank()) {
                         sku = item.path("seller_custom_field").asString("");
                     }
+                    String itemTitle = item.path("title").asString("");
                     double quantity = orderItem.path("quantity").asDouble(0);
 
-                    if (!sku.isBlank() && quantity > 0) {
-                        ventas.add(new Venta(sku, quantity, "ML"));
+                    if (quantity <= 0) {
+                        AppLogger.warn("ML - Producto con cantidad inválida en orden " + orderId + ": " + sku);
+                        String errorSku = sku.isBlank() ? itemTitle : sku;
+                        Venta venta = new Venta("CANT INVALIDA: " + errorSku, quantity, "ML");
+                        ventas.add(venta);
+                        ordenML.getItems().add(venta);
+                        continue;
                     }
+                    if (sku.isBlank()) {
+                        AppLogger.warn("ML - Producto sin SKU en orden " + orderId + ": " + itemTitle);
+                        Venta venta = new Venta("SIN SKU: " + itemTitle, quantity, "ML");
+                        ventas.add(venta);
+                        ordenML.getItems().add(venta);
+                        continue;
+                    }
+                    Venta venta = new Venta(sku, quantity, "ML");
+                    ventas.add(venta);
+                    ordenML.getItems().add(venta);
+                }
+
+                if (!ordenML.getItems().isEmpty()) {
+                    ordenes.add(ordenML);
                 }
             }
 
@@ -125,16 +163,17 @@ public class MercadoLibreAPI {
         }
 
         AppLogger.info("ML - Ventas ready_to_print: " + ventas.size());
-        return ventas;
+        return new MLOrderResult(ventas, ordenes);
     }
 
     /**
-     * Obtiene las ventas de ML con envío "Acuerdo con el vendedor" que NO tengan la nota "impreso".
+     * Obtiene las ventas de ML sin envío (acuerdo con el vendedor) que NO tengan la nota "impreso".
      */
-    public static List<Venta> obtenerVentasSellerAgreement(String userId) {
+    public static MLOrderResult obtenerVentasSellerAgreement(String userId) {
         verificarTokens();
 
         List<Venta> ventas = new ArrayList<>();
+        List<OrdenML> ordenes = new ArrayList<>();
         Set<Long> orderIdsSeen = new HashSet<>();
         int offset = 0;
         final int limit = 50;
@@ -143,9 +182,14 @@ public class MercadoLibreAPI {
 
         while (hasMore) {
             final int currentOffset = offset;
+            // Filtrar últimos 7 días
+            String fechaDesde = java.time.OffsetDateTime.now()
+                    .minusDays(7)
+                    .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:00:00.000XXX"));
+
             String url = String.format(
-                    "https://api.mercadolibre.com/orders/search?seller=%s&shipping.status=to_be_agreed&sort=date_asc&offset=%d&limit=%d",
-                    userId, currentOffset, limit);
+                    "https://api.mercadolibre.com/orders/search?seller=%s&tags=no_shipping&order.status=paid&order.date_created.from=%s&sort=date_asc&offset=%d&limit=%d",
+                    userId, URLEncoder.encode(fechaDesde, StandardCharsets.UTF_8), currentOffset, limit);
 
             Supplier<HttpRequest> requestBuilder = () -> HttpRequest.newBuilder()
                     .uri(URI.create(url))
@@ -172,11 +216,37 @@ public class MercadoLibreAPI {
                 long orderId = order.path("id").asLong();
                 if (!orderIdsSeen.add(orderId)) continue;
 
+                // Excluir órdenes con tag "delivered"
+                JsonNode tagsNode = order.path("tags");
+                if (tagsNode.isArray()) {
+                    boolean esEntregada = false;
+                    for (JsonNode tag : tagsNode) {
+                        if ("delivered".equals(tag.asString())) {
+                            esEntregada = true;
+                            break;
+                        }
+                    }
+                    if (esEntregada) continue;
+                }
+
                 // Verificar si la orden tiene la nota "impreso"
                 if (tieneNotaImpreso(orderId)) {
                     omitidas++;
                     continue;
                 }
+
+                String dateCreated = order.path("date_created").asString("");
+                OffsetDateTime fecha = null;
+                if (!dateCreated.isBlank()) {
+                    try {
+                        fecha = OffsetDateTime.parse(dateCreated);
+                    } catch (Exception e) {
+                        AppLogger.warn("ML - Error al parsear fecha de orden " + orderId + ": " + dateCreated);
+                    }
+                }
+                JsonNode packNode = order.path("pack_id");
+                Long packId = packNode.isNull() || packNode.isMissingNode() ? null : packNode.asLong();
+                OrdenML ordenML = new OrdenML(orderId, packId, fecha);
 
                 JsonNode orderItems = order.path("order_items");
                 if (!orderItems.isArray()) continue;
@@ -187,11 +257,31 @@ public class MercadoLibreAPI {
                     if (sku.isBlank()) {
                         sku = item.path("seller_custom_field").asString("");
                     }
+                    String itemTitle = item.path("title").asString("");
                     double quantity = orderItem.path("quantity").asDouble(0);
 
-                    if (!sku.isBlank() && quantity > 0) {
-                        ventas.add(new Venta(sku, quantity, "ML Acuerdo"));
+                    if (quantity <= 0) {
+                        AppLogger.warn("ML Acuerdo - Producto con cantidad inválida en orden " + orderId + ": " + sku);
+                        String errorSku = sku.isBlank() ? itemTitle : sku;
+                        Venta venta = new Venta("CANT INVALIDA: " + errorSku, quantity, "ML Acuerdo");
+                        ventas.add(venta);
+                        ordenML.getItems().add(venta);
+                        continue;
                     }
+                    if (sku.isBlank()) {
+                        AppLogger.warn("ML Acuerdo - Producto sin SKU en orden " + orderId + ": " + itemTitle);
+                        Venta venta = new Venta("SIN SKU: " + itemTitle, quantity, "ML Acuerdo");
+                        ventas.add(venta);
+                        ordenML.getItems().add(venta);
+                        continue;
+                    }
+                    Venta venta = new Venta(sku, quantity, "ML Acuerdo");
+                    ventas.add(venta);
+                    ordenML.getItems().add(venta);
+                }
+
+                if (!ordenML.getItems().isEmpty()) {
+                    ordenes.add(ordenML);
                 }
             }
 
@@ -204,7 +294,276 @@ public class MercadoLibreAPI {
         }
 
         AppLogger.info("ML - Ventas seller_agreement: " + ventas.size() + " (omitidas con nota 'impreso': " + omitidas + ")");
-        return ventas;
+        return new MLOrderResult(ventas, ordenes);
+    }
+
+    /**
+     * Busca el stock disponible de un producto por SKU.
+     * Primero busca por atributo SELLER_SKU, si no encuentra intenta por seller_custom_field.
+     *
+     * @param userId ID del usuario/vendedor en ML
+     * @param sku    SKU del producto a buscar
+     * @return Stock disponible, o -1 si no se encuentra el producto
+     */
+    public static int obtenerStockPorSku(String userId, String sku) {
+        verificarTokens();
+
+        String encodedSku = URLEncoder.encode(sku, StandardCharsets.UTF_8);
+
+        // Intentar primero con seller_sku (atributo SELLER_SKU)
+        String itemId = buscarItemPorSkuParam(userId, encodedSku, "seller_sku");
+
+        // Si no encuentra, intentar con sku (campo seller_custom_field)
+        if (itemId == null) {
+            itemId = buscarItemPorSkuParam(userId, encodedSku, "sku");
+        }
+
+        if (itemId == null) {
+            return -1;
+        }
+
+        return obtenerStockDeItem(itemId);
+    }
+
+    /**
+     * Busca un item por SKU usando el parámetro especificado.
+     * @return itemId si encuentra, null si no
+     */
+    private static String buscarItemPorSkuParam(String userId, String encodedSku, String paramName) {
+        String url = String.format(
+                "https://api.mercadolibre.com/users/%s/items/search?%s=%s",
+                userId, paramName, encodedSku);
+
+        Supplier<HttpRequest> requestBuilder = () -> HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .header("Authorization", "Bearer " + tokens.accessToken)
+                .GET()
+                .build();
+
+        HttpResponse<String> response = retryHandler.sendWithRetry(requestBuilder);
+
+        if (response == null || response.statusCode() != 200) {
+            return null;
+        }
+
+        try {
+            JsonNode root = mapper.readTree(response.body());
+            JsonNode results = root.path("results");
+
+            if (!results.isArray() || results.isEmpty()) {
+                return null;
+            }
+
+            return results.get(0).asString();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Obtiene el stock disponible de un item por su ID.
+     * Primero obtiene el user_product_id y luego consulta el stock distribuido.
+     */
+    private static int obtenerStockDeItem(String itemId) {
+        // Paso 1: Obtener el item para extraer user_product_id
+        Supplier<HttpRequest> itemRequest = () -> HttpRequest.newBuilder()
+                .uri(URI.create("https://api.mercadolibre.com/items/" + itemId))
+                .header("Authorization", "Bearer " + tokens.accessToken)
+                .GET()
+                .build();
+
+        HttpResponse<String> itemResponse = retryHandler.sendWithRetry(itemRequest);
+
+        if (itemResponse == null || itemResponse.statusCode() != 200) {
+            AppLogger.warn("ML - Error al obtener item " + itemId + ": " +
+                    (itemResponse != null ? itemResponse.body() : "sin respuesta"));
+            return -1;
+        }
+
+        String userProductId;
+        try {
+            JsonNode itemRoot = mapper.readTree(itemResponse.body());
+            userProductId = itemRoot.path("user_product_id").asString("");
+            if (userProductId.isBlank()) {
+                // Fallback: usar available_quantity del item
+                return itemRoot.path("available_quantity").asInt(0);
+            }
+        } catch (Exception e) {
+            AppLogger.warn("ML - Error al leer user_product_id de item " + itemId + ": " + e.getMessage());
+            return -1;
+        }
+
+        // Paso 2: Obtener stock distribuido del user_product
+        Supplier<HttpRequest> stockRequest = () -> HttpRequest.newBuilder()
+                .uri(URI.create("https://api.mercadolibre.com/user-products/" + userProductId + "/stock"))
+                .header("Authorization", "Bearer " + tokens.accessToken)
+                .GET()
+                .build();
+
+        HttpResponse<String> stockResponse = retryHandler.sendWithRetry(stockRequest);
+
+        if (stockResponse == null || stockResponse.statusCode() != 200) {
+            AppLogger.warn("ML - Error al obtener stock de user_product " + userProductId + ": " +
+                    (stockResponse != null ? stockResponse.body() : "sin respuesta"));
+            return -1;
+        }
+
+        try {
+            JsonNode stockRoot = mapper.readTree(stockResponse.body());
+            JsonNode locations = stockRoot.path("locations");
+
+            if (!locations.isArray() || locations.isEmpty()) {
+                return 0;
+            }
+
+            // Sumar stock de todas las ubicaciones
+            int totalStock = 0;
+            for (JsonNode location : locations) {
+                totalStock += location.path("quantity").asInt(0);
+            }
+            return totalStock;
+        } catch (Exception e) {
+            AppLogger.warn("ML - Error al leer stock de user_product " + userProductId + ": " + e.getMessage());
+            return -1;
+        }
+    }
+
+    /**
+     * Obtiene el stock de múltiples SKUs en paralelo.
+     *
+     * @param userId ID del usuario/vendedor en ML
+     * @param skus   Lista de SKUs a buscar
+     * @return Mapa de SKU → stock disponible (-1 si no se encontró)
+     */
+    public static Map<String, Integer> obtenerStockPorSkus(String userId, List<String> skus) {
+        Map<String, Integer> stockMap = new LinkedHashMap<>();
+
+        // Usar CompletableFuture para llamadas en paralelo
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+
+        for (String sku : skus) {
+            CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+                int stock = obtenerStockPorSku(userId, sku);
+                synchronized (stockMap) {
+                    stockMap.put(sku, stock);
+                }
+            });
+            futures.add(future);
+        }
+
+        // Esperar a que terminen todas las llamadas
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+
+        return stockMap;
+    }
+
+    /**
+     * Método de prueba: obtiene una orden por ID y muestra el JSON completo.
+     */
+    public static void testObtenerOrden(long orderId) {
+        verificarTokens();
+
+        String url = "https://api.mercadolibre.com/orders/" + orderId;
+
+        Supplier<HttpRequest> requestBuilder = () -> HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .header("Authorization", "Bearer " + tokens.accessToken)
+                .GET()
+                .build();
+
+        HttpResponse<String> response = retryHandler.sendWithRetry(requestBuilder);
+
+        if (response == null) {
+            System.err.println("ML TEST - Sin respuesta para orden " + orderId);
+            return;
+        }
+
+        System.out.println("ML TEST - Status: " + response.statusCode());
+        try {
+            JsonNode json = mapper.readTree(response.body());
+            String prettyJson = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(json);
+            System.out.println("ML TEST - Orden " + orderId + ":\n" + prettyJson);
+        } catch (Exception e) {
+            System.out.println("ML TEST - JSON raw:\n" + response.body());
+        }
+    }
+
+    /**
+     * Método de prueba: obtiene las notas de una orden por ID y muestra el JSON.
+     */
+    public static void testObtenerNotas(long orderId) {
+        verificarTokens();
+
+        String url = "https://api.mercadolibre.com/orders/" + orderId + "/notes";
+
+        Supplier<HttpRequest> requestBuilder = () -> HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .header("Authorization", "Bearer " + tokens.accessToken)
+                .GET()
+                .build();
+
+        HttpResponse<String> response = retryHandler.sendWithRetry(requestBuilder);
+
+        if (response == null) {
+            System.err.println("ML TEST - Sin respuesta para notas de orden " + orderId);
+            return;
+        }
+
+        System.out.println("ML TEST NOTAS - Status: " + response.statusCode());
+        try {
+            JsonNode json = mapper.readTree(response.body());
+            String prettyJson = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(json);
+            System.out.println("ML TEST NOTAS - Orden " + orderId + ":\n" + prettyJson);
+        } catch (Exception e) {
+            System.out.println("ML TEST NOTAS - JSON raw:\n" + response.body());
+        }
+    }
+
+    /**
+     * Método de prueba: obtiene los estados de shipment disponibles.
+     */
+    public static void testObtenerShipmentStatuses() {
+        verificarTokens();
+
+        String url = "https://api.mercadolibre.com/shipment_statuses";
+
+        Supplier<HttpRequest> requestBuilder = () -> HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .header("Authorization", "Bearer " + tokens.accessToken)
+                .header("x-format-new", "true")
+                .GET()
+                .build();
+
+        HttpResponse<String> response = retryHandler.sendWithRetry(requestBuilder);
+
+        if (response == null) {
+            System.err.println("ML TEST - Sin respuesta para shipment_statuses");
+            return;
+        }
+
+        System.out.println("ML TEST SHIPMENT STATUSES - Status: " + response.statusCode());
+        try {
+            JsonNode json = mapper.readTree(response.body());
+            String prettyJson = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(json);
+            System.out.println("ML TEST SHIPMENT STATUSES:\n" + prettyJson);
+        } catch (Exception e) {
+            System.out.println("ML TEST SHIPMENT STATUSES - JSON raw:\n" + response.body());
+        }
+    }
+
+    // Main de prueba
+    public static void main(String[] args) {
+        if (!inicializar()) {
+            System.err.println("No se pudo inicializar ML API");
+            return;
+        }
+        // Cambiar el ID de orden para probar
+        long orderId = 2000015017415880L;
+        testObtenerOrden(orderId);
+        System.out.println("\n--- NOTAS ---\n");
+        testObtenerNotas(orderId);
+        System.out.println("\n--- SHIPMENT STATUSES ---\n");
+        testObtenerShipmentStatuses();
     }
 
     /**
@@ -224,12 +583,16 @@ public class MercadoLibreAPI {
         }
 
         try {
-            JsonNode notes = mapper.readTree(response.body());
-            if (!notes.isArray()) return false;
+            JsonNode root = mapper.readTree(response.body());
+            // La respuesta es un array con un objeto que tiene "results"
+            if (!root.isArray() || root.isEmpty()) return false;
 
-            for (JsonNode note : notes) {
-                String texto = note.path("note").asString("");
-                if (texto.toLowerCase().contains("impreso")) {
+            JsonNode results = root.get(0).path("results");
+            if (!results.isArray()) return false;
+
+            for (JsonNode note : results) {
+                String texto = note.path("note").asString("").toLowerCase();
+                if (texto.contains("impreso") || texto.contains("impresa")) {
                     return true;
                 }
             }
@@ -399,4 +762,5 @@ public class MercadoLibreAPI {
         tokens.issuedAt = System.currentTimeMillis();
         return tokens;
     }
+
 }

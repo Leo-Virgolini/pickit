@@ -1,9 +1,12 @@
 package ar.com.leo;
 
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.util.function.Consumer;
 
 public class AppLogger {
 
+    private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm:ss");
     private static volatile Consumer<String> uiLogger;
 
     public static void setUiLogger(Consumer<String> logger) {
@@ -26,10 +29,11 @@ public class AppLogger {
     }
 
     private static void log(String message) {
-        System.out.println(message);
+        String timestamped = "[" + LocalTime.now().format(TIME_FMT) + "] " + message;
+        System.out.println(timestamped);
         Consumer<String> logger = uiLogger;
         if (logger != null) {
-            logger.accept(message);
+            logger.accept(timestamped);
         }
     }
 }

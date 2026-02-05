@@ -13,21 +13,22 @@ public class ExcelManager {
 
     public record ComboEntry(String skuComponente, double cantidad) {}
 
+    public record ProductoStock(String producto, String subRubro, String unidad, String proveedor) {}
+
     /**
-     * Lee la hoja COMBOS del PICKIT.xlsm.
+     * Lee el archivo Combos.xlsx.
      * Col A = SKU combo, Col C = SKU componente, Col E = cantidad por combo.
      * Retorna Map<String, List<ComboEntry>> (SKU combo -> lista de componentes).
      */
-    public static Map<String, List<ComboEntry>> obtenerCombos(File pickitExcel) throws Exception {
+    public static Map<String, List<ComboEntry>> obtenerCombos(File combosExcel) throws Exception {
         Map<String, List<ComboEntry>> combos = new LinkedHashMap<>();
 
-        try (OPCPackage opcPackage = OPCPackage.open(pickitExcel, PackageAccess.READ);
+        try (OPCPackage opcPackage = OPCPackage.open(combosExcel, PackageAccess.READ);
              Workbook workbook = new XSSFWorkbook(opcPackage)) {
 
-            Sheet hoja = workbook.getSheet("COMBOS");
+            Sheet hoja = workbook.getSheetAt(0);
             if (hoja == null) {
-                AppLogger.warn("Excel - No se encontró la hoja 'COMBOS' en " + pickitExcel.getName());
-                return combos;
+                throw new Exception("No se encontró ninguna hoja en " + combosExcel.getName());
             }
 
             for (int i = 3; i <= hoja.getLastRowNum(); i++) {
@@ -54,6 +55,11 @@ public class ExcelManager {
                     continue;
                 }
 
+                if (cantidad <= 0) {
+                    AppLogger.warn("Excel - Cantidad inválida en combo fila " + (i + 1) + ": " + cantidadStr + " (SKU: " + skuComponente + ")");
+                    continue;
+                }
+
                 combos.computeIfAbsent(skuCombo, k -> new ArrayList<>())
                         .add(new ComboEntry(skuComponente, cantidad));
             }
@@ -64,45 +70,47 @@ public class ExcelManager {
     }
 
     /**
-     * Lee la hoja STOCK del PICKIT.xlsm.
-     * Col A = SKU, Col L (12, index 11) = Unidad.
-     * Retorna Map<String, String> (SKU -> unidad).
+     * Lee el archivo Stock.xlsx.
+     * Col A = SKU, Col B = Producto, Col G = Sub Rubro, Col L = Unidad, Col R = Proveedor.
+     * Retorna Map<String, ProductoStock> (SKU -> datos del producto).
      */
-    public static Map<String, String> obtenerUnidades(File pickitExcel) throws Exception {
-        Map<String, String> unidades = new LinkedHashMap<>();
+    public static Map<String, ProductoStock> obtenerProductosStock(File stockExcel) throws Exception {
+        Map<String, ProductoStock> productos = new LinkedHashMap<>();
 
-        try (OPCPackage opcPackage = OPCPackage.open(pickitExcel, PackageAccess.READ);
+        try (OPCPackage opcPackage = OPCPackage.open(stockExcel, PackageAccess.READ);
              Workbook workbook = new XSSFWorkbook(opcPackage)) {
 
-            Sheet hoja = workbook.getSheet("STOCK");
+            Sheet hoja = workbook.getSheetAt(0);
             if (hoja == null) {
-                AppLogger.warn("Excel - No se encontró la hoja 'STOCK' en " + pickitExcel.getName());
-                return unidades;
+                throw new Exception("No se encontró ninguna hoja en " + stockExcel.getName());
             }
 
             for (int i = 3; i <= hoja.getLastRowNum(); i++) {
                 Row fila = hoja.getRow(i);
                 if (isEmptyRow(fila)) continue;
 
-                Cell celdaSku = fila.getCell(0);    // Col A
-                Cell celdaUnidad = fila.getCell(11); // Col L (index 11)
+                Cell celdaSku = fila.getCell(0);         // Col A
+                Cell celdaProducto = fila.getCell(1);    // Col B
+                Cell celdaSubRubro = fila.getCell(6);    // Col G
+                Cell celdaUnidad = fila.getCell(11);     // Col L
+                Cell celdaProveedor = fila.getCell(17);  // Col R
 
                 if (celdaSku == null) continue;
 
                 String sku = getCellValue(celdaSku).trim();
                 if (sku.isEmpty()) continue;
 
-                String unidad = "";
-                if (celdaUnidad != null) {
-                    unidad = getCellValue(celdaUnidad).trim();
-                }
+                String producto = celdaProducto != null ? getCellValue(celdaProducto).trim() : "";
+                String subRubro = celdaSubRubro != null ? getCellValue(celdaSubRubro).trim() : "";
+                String unidad = celdaUnidad != null ? getCellValue(celdaUnidad).trim() : "";
+                String proveedor = celdaProveedor != null ? getCellValue(celdaProveedor).trim() : "";
 
-                unidades.put(sku, unidad);
+                productos.put(sku, new ProductoStock(producto, subRubro, unidad, proveedor));
             }
         }
 
-        AppLogger.info("Excel - Unidades leídas: " + unidades.size());
-        return unidades;
+        AppLogger.info("Excel - Productos leídos: " + productos.size());
+        return productos;
     }
 
     private static boolean isEmptyRow(Row row) {
@@ -164,6 +172,7 @@ public class ExcelManager {
                     case BOOLEAN:
                         return String.valueOf(cell.getBooleanCellValue());
                     case ERROR:
+                        AppLogger.warn("Excel - Fórmula con error en celda " + cell.getAddress());
                         return "0";
                     default:
                         return "";
