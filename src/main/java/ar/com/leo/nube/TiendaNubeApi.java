@@ -85,7 +85,7 @@ public class TiendaNubeApi {
     private static List<Venta> obtenerVentas(StoreCredentials store, String label) {
         List<Venta> ventas = new ArrayList<>();
         int page = 1;
-        final int perPage = 50;
+        final int perPage = 200;
         boolean hasMore = true;
 
         while (hasMore) {
@@ -126,6 +126,12 @@ public class TiendaNubeApi {
 
                 // Filtrar por fulfillment_orders con status UNPACKED
                 if (!tieneFulfillmentUnpacked(order)) continue;
+
+                // Omitir órdenes de retiro en local que tengan alguna nota
+                if (esPickup(order) && tieneNota(order)) {
+                    AppLogger.info("NUBE (" + label + ") - Omitida orden pickup con nota: " + orderId);
+                    continue;
+                }
 
                 JsonNode products = order.path("products");
                 if (!products.isArray()) continue;
@@ -224,6 +230,22 @@ public class TiendaNubeApi {
             AppLogger.warn("NUBE - Error al obtener stock de SKU " + sku + ": " + e.getMessage());
             return -1;
         }
+    }
+
+    private static boolean esPickup(JsonNode order) {
+        JsonNode fulfillments = order.path("fulfillments");
+        if (!fulfillments.isArray()) return false;
+        for (JsonNode fo : fulfillments) {
+            if ("pickup".equalsIgnoreCase(fo.path("shipping").path("type").asString(""))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean tieneNota(JsonNode order) {
+        String nota = order.path("owner_note").asString("").trim();
+        return !nota.isEmpty();
     }
 
     /**

@@ -17,6 +17,10 @@ public class AppLogger {
         log(message);
     }
 
+    public static void success(String message) {
+        log("[OK] " + message);
+    }
+
     public static void warn(String message) {
         log("[WARN] " + message);
     }

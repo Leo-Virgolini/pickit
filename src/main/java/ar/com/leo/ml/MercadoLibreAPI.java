@@ -104,6 +104,19 @@ public class MercadoLibreAPI {
                 long orderId = order.path("id").asLong();
                 if (!orderIdsSeen.add(orderId)) continue;
 
+                // Excluir órdenes con tag "delivered"
+                JsonNode tagsNode = order.path("tags");
+                if (tagsNode.isArray()) {
+                    boolean esEntregada = false;
+                    for (JsonNode tag : tagsNode) {
+                        if ("delivered".equals(tag.asString())) {
+                            esEntregada = true;
+                            break;
+                        }
+                    }
+                    if (esEntregada) continue;
+                }
+
                 String dateCreated = order.path("date_created").asString("");
                 OffsetDateTime fecha = null;
                 if (!dateCreated.isBlank()) {
@@ -182,7 +195,6 @@ public class MercadoLibreAPI {
 
         while (hasMore) {
             final int currentOffset = offset;
-            // Filtrar últimos 7 días
             String fechaDesde = java.time.OffsetDateTime.now()
                     .minusDays(7)
                     .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:00:00.000XXX"));
@@ -229,8 +241,11 @@ public class MercadoLibreAPI {
                     if (esEntregada) continue;
                 }
 
-                // Verificar si la orden tiene la nota "impreso"
-                if (tieneNotaImpreso(orderId)) {
+                // Excluir órdenes completadas (fulfilled)
+                if (order.path("fulfilled").asBoolean(false)) continue;
+
+                // Verificar si la orden tiene alguna nota
+                if (tieneNota(orderId)) {
                     omitidas++;
                     continue;
                 }
@@ -293,7 +308,7 @@ public class MercadoLibreAPI {
             AppLogger.info(String.format("ML - Obtenidas %d/%d órdenes seller_agreement", Math.min(offset, total), total));
         }
 
-        AppLogger.info("ML - Ventas seller_agreement: " + ventas.size() + " (omitidas con nota 'impreso': " + omitidas + ")");
+        AppLogger.info("ML - Ventas seller_agreement: " + ventas.size() + " (omitidas con nota: " + omitidas + ")");
         return new MLOrderResult(ventas, ordenes);
     }
 
@@ -551,25 +566,80 @@ public class MercadoLibreAPI {
         }
     }
 
+    /**
+     * Test: compara búsquedas con y sin tags.not=delivered
+     * y muestra los tags de cada orden para entender la diferencia.
+     */
+    public static void testFiltroDelivered() {
+        try {
+            String userId = getUserId();
+            String fechaDesde = java.time.OffsetDateTime.now()
+                    .minusDays(7)
+                    .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:00:00.000XXX"));
+            String fechaEncoded = URLEncoder.encode(fechaDesde, StandardCharsets.UTF_8);
+
+            String urlBase = "https://api.mercadolibre.com/orders/search?seller=%s&tags=no_shipping&order.status=paid&order.date_created.from=%s&sort=date_asc&limit=50";
+            String urlSin = String.format(urlBase, userId, fechaEncoded);
+            String urlCon = urlSin + "&tags.not=delivered";
+
+            // Query SIN tags.not
+            Supplier<HttpRequest> reqSin = () -> HttpRequest.newBuilder()
+                    .uri(URI.create(urlSin))
+                    .header("Authorization", "Bearer " + tokens.accessToken)
+                    .GET().build();
+            HttpResponse<String> respSin = retryHandler.sendWithRetry(reqSin);
+            JsonNode rootSin = mapper.readTree(respSin.body());
+            int totalSin = rootSin.path("paging").path("total").asInt(0);
+
+            // Query CON tags.not=delivered
+            Supplier<HttpRequest> reqCon = () -> HttpRequest.newBuilder()
+                    .uri(URI.create(urlCon))
+                    .header("Authorization", "Bearer " + tokens.accessToken)
+                    .GET().build();
+            HttpResponse<String> respCon = retryHandler.sendWithRetry(reqCon);
+            JsonNode rootCon = mapper.readTree(respCon.body());
+            int totalCon = rootCon.path("paging").path("total").asInt(0);
+
+            System.out.println("=== TEST tags.not=delivered (últimos 7 días) ===");
+            System.out.println("SIN filtro:            total = " + totalSin);
+            System.out.println("CON tags.not=delivered: total = " + totalCon);
+            System.out.println("Diferencia:            " + (totalSin - totalCon));
+            System.out.println();
+
+            // Mostrar tags de cada orden de la query SIN filtro
+            System.out.println("--- Detalle de órdenes (sin filtro) ---");
+            JsonNode results = rootSin.path("results");
+            if (results.isArray()) {
+                for (JsonNode order : results) {
+                    long orderId = order.path("id").asLong();
+                    String status = order.path("status").asString("");
+                    JsonNode tags = order.path("tags");
+                    boolean fulfilled = order.path("fulfilled").asBoolean(false);
+                    boolean tieneNotaEscrita = tieneNota(orderId);
+                    System.out.println("Orden " + orderId + " | status: " + status + " | fulfilled: " + fulfilled + " | nota: " + tieneNotaEscrita + " | tags: " + tags);
+                }
+            }
+            System.out.println("================================================");
+
+        } catch (Exception e) {
+            System.err.println("Error en test: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
     // Main de prueba
     public static void main(String[] args) {
         if (!inicializar()) {
             System.err.println("No se pudo inicializar ML API");
             return;
         }
-        // Cambiar el ID de orden para probar
-        long orderId = 2000015017415880L;
-        testObtenerOrden(orderId);
-        System.out.println("\n--- NOTAS ---\n");
-        testObtenerNotas(orderId);
-        System.out.println("\n--- SHIPMENT STATUSES ---\n");
-        testObtenerShipmentStatuses();
+        testFiltroDelivered();
     }
 
     /**
-     * Verifica si una orden tiene alguna nota que contenga "impreso" (case-insensitive).
+     * Verifica si una orden tiene alguna nota escrita.
      */
-    private static boolean tieneNotaImpreso(long orderId) {
+    private static boolean tieneNota(long orderId) {
         Supplier<HttpRequest> requestBuilder = () -> HttpRequest.newBuilder()
                 .uri(URI.create("https://api.mercadolibre.com/orders/" + orderId + "/notes"))
                 .header("Authorization", "Bearer " + tokens.accessToken)
@@ -584,15 +654,14 @@ public class MercadoLibreAPI {
 
         try {
             JsonNode root = mapper.readTree(response.body());
-            // La respuesta es un array con un objeto que tiene "results"
             if (!root.isArray() || root.isEmpty()) return false;
 
             JsonNode results = root.get(0).path("results");
             if (!results.isArray()) return false;
 
             for (JsonNode note : results) {
-                String texto = note.path("note").asString("").toLowerCase();
-                if (texto.contains("impreso") || texto.contains("impresa")) {
+                String texto = note.path("note").asString("").trim();
+                if (!texto.isEmpty()) {
                     return true;
                 }
             }

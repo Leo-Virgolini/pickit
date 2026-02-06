@@ -6,7 +6,11 @@ import javafx.application.Platform;
 import javafx.collections.ObservableList;
 import javafx.concurrent.Service;
 import javafx.concurrent.Task;
-import javafx.scene.control.TextArea;
+import javafx.scene.control.ScrollPane;
+import javafx.scene.paint.Color;
+import javafx.scene.text.Font;
+import javafx.scene.text.Text;
+import javafx.scene.text.TextFlow;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -16,16 +20,23 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public class PickitService extends Service<File> {
 
+    private static final Color COLOR_INFO = Color.web("#b0b8c8");
+    private static final Color COLOR_SUCCESS = Color.LIMEGREEN;
+    private static final Color COLOR_WARN = Color.web("#f0a030");
+    private static final Color COLOR_ERROR = Color.FIREBRICK;
+
     private final File stockExcel;
     private final File combosExcel;
     private final List<ProductoManual> productosManuales;
-    private final TextArea logTextArea;
+    private final TextFlow logTextFlow;
+    private final ScrollPane logScrollPane;
 
-    public PickitService(File stockExcel, File combosExcel, ObservableList<ProductoManual> productosManuales, TextArea logTextArea) {
+    public PickitService(File stockExcel, File combosExcel, ObservableList<ProductoManual> productosManuales, TextFlow logTextFlow, ScrollPane logScrollPane) {
         this.stockExcel = stockExcel;
         this.combosExcel = combosExcel;
         this.productosManuales = new ArrayList<>(productosManuales);
-        this.logTextArea = logTextArea;
+        this.logTextFlow = logTextFlow;
+        this.logScrollPane = logScrollPane;
     }
 
     @Override
@@ -57,9 +68,21 @@ public class PickitService extends Service<File> {
                             batch.add(msg);
                         }
                         flushing.set(false);
-                        if (!batch.isEmpty()) {
-                            logTextArea.appendText(String.join("\n", batch) + "\n");
+                        for (String message : batch) {
+                            Text text = new Text(message + "\n");
+                            text.setFont(Font.font("Roboto", 13));
+                            if (message.contains("[ERROR]")) {
+                                text.setFill(COLOR_ERROR);
+                            } else if (message.contains("[WARN]")) {
+                                text.setFill(COLOR_WARN);
+                            } else if (message.contains("[OK]")) {
+                                text.setFill(COLOR_SUCCESS);
+                            } else {
+                                text.setFill(COLOR_INFO);
+                            }
+                            logTextFlow.getChildren().add(text);
                         }
+                        logScrollPane.setVvalue(1.0);
                         if (!pendingMessages.isEmpty()) {
                             scheduleFlush();
                         }

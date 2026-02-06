@@ -1,6 +1,7 @@
 package ar.com.leo.fx;
 
 import ar.com.leo.AppLogger;
+import ar.com.leo.excel.ExcelManager;
 import ar.com.leo.fx.model.ProductoManual;
 import ar.com.leo.fx.services.PickitService;
 import javafx.collections.FXCollections;
@@ -10,11 +11,19 @@ import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
+import javafx.scene.input.Clipboard;
+import javafx.scene.input.ClipboardContent;
+import javafx.scene.layout.Pane;
 import javafx.scene.media.AudioClip;
+import javafx.scene.paint.Color;
+import javafx.scene.text.Font;
+import javafx.scene.text.Text;
+import javafx.scene.text.TextFlow;
 import javafx.stage.FileChooser;
 
 import java.io.File;
 import java.net.URL;
+import java.util.List;
 import java.util.ResourceBundle;
 import java.util.prefs.Preferences;
 
@@ -27,7 +36,9 @@ public class VentanaController implements Initializable {
     @FXML
     private Button pickitButton;
     @FXML
-    private TextArea logTextArea;
+    private ScrollPane logScrollPane;
+    @FXML
+    private TextFlow logTextFlow;
     @FXML
     private ProgressIndicator progressIndicator;
     @FXML
@@ -42,9 +53,16 @@ public class VentanaController implements Initializable {
     private TableColumn<ProductoManual, Double> colCantidad;
     @FXML
     private Button btnAgregarModificar;
+    @FXML
+    private Pane paneStock;
+    @FXML
+    private Pane paneCombos;
+    @FXML
+    private Pane paneManuales;
 
     private File stockExcel;
     private File combosExcel;
+    private File ultimoImportDir;
     private final ObservableList<ProductoManual> productosManualList = FXCollections.observableArrayList();
     private ProductoManual productoEnEdicion = null;
 
@@ -103,9 +121,47 @@ public class VentanaController implements Initializable {
             }
         });
 
+        // Auto-scroll al fondo cuando se agrega contenido
+        logTextFlow.heightProperty().addListener((obs, oldVal, newVal) -> logScrollPane.setVvalue(1.0));
+
+        // Menú contextual para copiar el log
+        ContextMenu logContextMenu = new ContextMenu();
+        MenuItem copiarTodo = new MenuItem("Copiar todo");
+        copiarTodo.setOnAction(e -> {
+            StringBuilder sb = new StringBuilder();
+            for (var node : logTextFlow.getChildren()) {
+                if (node instanceof Text t) {
+                    sb.append(t.getText());
+                }
+            }
+            ClipboardContent content = new ClipboardContent();
+            content.putString(sb.toString());
+            Clipboard.getSystemClipboard().setContent(content);
+        });
+        logContextMenu.getItems().add(copiarTodo);
+        logScrollPane.setContextMenu(logContextMenu);
+
         loadPreferences();
 
         Main.stage.setOnCloseRequest(event -> savePreferences());
+    }
+
+    private void setUIDisabled(boolean disabled) {
+        pickitButton.setDisable(disabled);
+        paneStock.setDisable(disabled);
+        paneCombos.setDisable(disabled);
+        paneManuales.setDisable(disabled);
+    }
+
+    private void clearLog() {
+        logTextFlow.getChildren().clear();
+    }
+
+    private void appendLog(String message, Color color) {
+        Text text = new Text(message + "\n");
+        text.setFill(color);
+        text.setFont(Font.font("Roboto", 13));
+        logTextFlow.getChildren().add(text);
     }
 
     private void loadPreferences() {
@@ -128,6 +184,13 @@ public class VentanaController implements Initializable {
                 combosExcel = null;
             }
         }
+        String pathImportDir = prefs.get("pathImportDir", null);
+        if (pathImportDir != null && !pathImportDir.isBlank()) {
+            File dir = new File(pathImportDir);
+            if (dir.isDirectory()) {
+                ultimoImportDir = dir;
+            }
+        }
     }
 
     private void savePreferences() {
@@ -138,11 +201,14 @@ public class VentanaController implements Initializable {
         if (ubicacionCombosExcel.getText() != null && !ubicacionCombosExcel.getText().isBlank()) {
             prefs.put("pathCombosExcel", ubicacionCombosExcel.getText());
         }
+        if (ultimoImportDir != null) {
+            prefs.put("pathImportDir", ultimoImportDir.getAbsolutePath());
+        }
     }
 
     @FXML
     public void buscarStockExcel(ActionEvent event) {
-        logTextArea.clear();
+        clearLog();
 
         FileChooser fileChooser = new FileChooser();
         fileChooser.setTitle("Elige archivo Stock.xlsx");
@@ -166,7 +232,7 @@ public class VentanaController implements Initializable {
 
     @FXML
     public void buscarCombosExcel(ActionEvent event) {
-        logTextArea.clear();
+        clearLog();
 
         FileChooser fileChooser = new FileChooser();
         fileChooser.setTitle("Elige archivo Combos");
@@ -190,41 +256,34 @@ public class VentanaController implements Initializable {
 
     @FXML
     public void generarPickit(ActionEvent event) {
-        logTextArea.clear();
+        clearLog();
 
         if (stockExcel == null || !stockExcel.isFile()) {
-            logTextArea.setStyle("-fx-text-fill: firebrick;");
-            logTextArea.setText("Error: seleccionar el archivo Stock.xlsx primero.");
+            appendLog("Error: seleccionar el archivo Stock.xlsx primero.", Color.FIREBRICK);
             return;
         }
         if (combosExcel == null || !combosExcel.isFile()) {
-            logTextArea.setStyle("-fx-text-fill: firebrick;");
-            logTextArea.setText("Error: seleccionar el archivo Combos.xlsx primero.");
+            appendLog("Error: seleccionar el archivo Combos.xlsx primero.", Color.FIREBRICK);
             return;
         }
 
-        PickitService service = new PickitService(stockExcel, combosExcel, productosManualList, logTextArea);
+        PickitService service = new PickitService(stockExcel, combosExcel, productosManualList, logTextFlow, logScrollPane);
         service.setOnRunning(e -> {
-            pickitButton.setDisable(true);
+            setUIDisabled(true);
             progressIndicator.setVisible(true);
-            logTextArea.setStyle("-fx-text-fill: darkblue;");
         });
         service.setOnSucceeded(e -> {
             successSound.play();
-            logTextArea.setStyle("-fx-text-fill: darkgreen;");
-            AppLogger.info("Pickit generado: " + service.getValue().getAbsolutePath());
-            AppLogger.info("Proceso Pickit finalizado.");
-            pickitButton.setDisable(false);
+            setUIDisabled(false);
             progressIndicator.setVisible(false);
         });
         service.setOnFailed(e -> {
             errorSound.play();
-            logTextArea.setStyle("-fx-text-fill: firebrick;");
             Throwable ex = service.getException();
             String mensaje = ex != null ? ex.getLocalizedMessage() : "Error desconocido";
-            logTextArea.appendText("\n\nERROR: " + mensaje + "\n");
+            appendLog("\nERROR: " + mensaje, Color.FIREBRICK);
             AppLogger.error("Error Pickit: " + mensaje, ex);
-            pickitButton.setDisable(false);
+            setUIDisabled(false);
             progressIndicator.setVisible(false);
         });
         service.start();
@@ -240,8 +299,8 @@ public class VentanaController implements Initializable {
 
         // Validar que SKU sea numérico
         if (!sku.matches("\\d+")) {
-            logTextArea.setStyle("-fx-text-fill: firebrick;");
-            logTextArea.setText("Error: el SKU debe ser numérico.");
+            clearLog();
+            appendLog("Error: el SKU debe ser numérico.", Color.FIREBRICK);
             return;
         }
 
@@ -251,15 +310,15 @@ public class VentanaController implements Initializable {
             try {
                 cantidad = Double.parseDouble(cantidadText.trim());
             } catch (NumberFormatException e) {
-                logTextArea.setStyle("-fx-text-fill: firebrick;");
-                logTextArea.setText("Error: cantidad inválida.");
+                clearLog();
+                appendLog("Error: cantidad inválida.", Color.FIREBRICK);
                 return;
             }
         }
 
         if (cantidad <= 0) {
-            logTextArea.setStyle("-fx-text-fill: firebrick;");
-            logTextArea.setText("Error: la cantidad debe ser mayor a 0.");
+            clearLog();
+            appendLog("Error: la cantidad debe ser mayor a 0.", Color.FIREBRICK);
             return;
         }
 
@@ -269,8 +328,8 @@ public class VentanaController implements Initializable {
                 .anyMatch(p -> p.getSku().equalsIgnoreCase(skuFinal) && p != productoEnEdicion);
 
         if (duplicado) {
-            logTextArea.setStyle("-fx-text-fill: firebrick;");
-            logTextArea.setText("Error: ya existe un producto con SKU " + sku);
+            clearLog();
+            appendLog("Error: ya existe un producto con SKU " + sku, Color.FIREBRICK);
             return;
         }
 
@@ -315,5 +374,49 @@ public class VentanaController implements Initializable {
         btnAgregarModificar.setText("Agregar");
         skuManualField.clear();
         cantidadManualField.clear();
+    }
+
+    @FXML
+    public void importarProductosExcel(ActionEvent event) {
+        FileChooser fileChooser = new FileChooser();
+        fileChooser.setTitle("Importar productos manuales desde Excel");
+        fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Archivo XLSX", "*.xlsx"));
+
+        File initialDir = (ultimoImportDir != null && ultimoImportDir.isDirectory())
+                ? ultimoImportDir : new File(System.getProperty("user.dir"));
+        fileChooser.setInitialDirectory(initialDir);
+
+        File file = fileChooser.showOpenDialog(Main.stage);
+        if (file == null) return;
+
+        ultimoImportDir = file.getParentFile();
+        clearLog();
+
+        try {
+            List<ProductoManual> importados = ExcelManager.obtenerProductosManualesDesdeExcel(file);
+            int nuevos = 0;
+            int sumados = 0;
+
+            for (ProductoManual importado : importados) {
+                ProductoManual existente = productosManualList.stream()
+                        .filter(p -> p.getSku().equalsIgnoreCase(importado.getSku()))
+                        .findFirst().orElse(null);
+
+                if (existente != null) {
+                    existente.setCantidad(existente.getCantidad() + importado.getCantidad());
+                    sumados++;
+                } else {
+                    productosManualList.add(importado);
+                    nuevos++;
+                }
+            }
+
+            productosManualTable.refresh();
+            appendLog("Importación completada: " + nuevos + " nuevos, " + sumados + " sumados a existentes.", Color.LIGHTGREEN);
+            AppLogger.info("IMPORT - " + nuevos + " nuevos, " + sumados + " sumados de " + file.getName());
+        } catch (Exception e) {
+            appendLog("Error al importar: " + e.getMessage(), Color.FIREBRICK);
+            AppLogger.error("Error al importar Excel: " + e.getMessage(), e);
+        }
     }
 }

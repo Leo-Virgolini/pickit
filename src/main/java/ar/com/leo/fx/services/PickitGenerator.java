@@ -36,8 +36,8 @@ public class PickitGenerator {
     /**
      * Genera el Excel Pickit ejecutando todos los pasos del flujo.
      *
-     * @param stockExcel Archivo Stock.xlsx con datos de productos
-     * @param combosExcel Archivo Combos.xlsx con datos de combos
+     * @param stockExcel        Archivo Stock.xlsx con datos de productos
+     * @param combosExcel       Archivo Combos.xlsx con datos de combos
      * @param productosManuales Lista de productos agregados manualmente
      * @return Archivo Excel generado
      */
@@ -54,9 +54,8 @@ public class PickitGenerator {
         final List<OrdenML> todasLasOrdenesML = Collections.synchronizedList(new ArrayList<>());
 
         // Inicializar Tienda Nube antes de lanzar los futures paralelos
-        boolean nubeDisponible = TiendaNubeApi.inicializar();
-        if (!nubeDisponible) {
-            AppLogger.warn("PICKIT - No se pudo inicializar Tienda Nube. Se omitirán ventas de Nube.");
+        if (!TiendaNubeApi.inicializar()) {
+            throw new RuntimeException("No se pudieron inicializar las credenciales de Tienda Nube.");
         }
 
         // Pasos 2-5: Obtener ventas de todas las fuentes en paralelo
@@ -80,7 +79,6 @@ public class PickitGenerator {
 
         var futureNube = executor.submit(() -> {
             AppLogger.info("PICKIT - Paso 4: Obteniendo ventas KT HOGAR (Tienda Nube)...");
-            if (!nubeDisponible) return 0;
             List<Venta> ventas = TiendaNubeApi.obtenerVentasHogar();
             todasLasVentas.addAll(ventas);
             return ventas.size();
@@ -88,7 +86,6 @@ public class PickitGenerator {
 
         var futureGastro = executor.submit(() -> {
             AppLogger.info("PICKIT - Paso 5: Obteniendo ventas KT GASTRO (Tienda Nube)...");
-            if (!nubeDisponible) return 0;
             List<Venta> ventas = TiendaNubeApi.obtenerVentasGastro();
             todasLasVentas.addAll(ventas);
             return ventas.size();
@@ -102,7 +99,7 @@ public class PickitGenerator {
 
         // Paso 6: Consolidar ventas
         AppLogger.info("PICKIT - Paso 6: Consolidando ventas...");
-        AppLogger.info(String.format("  ML ready_to_print: %d | ML acuerdo: %d | KT HOGAR: %d | KT GASTRO: %d | Total: %d",
+        AppLogger.info(String.format("ML ready_to_print: %d | ML acuerdo: %d | KT HOGAR: %d | KT GASTRO: %d | Total: %d",
                 countMLPrint, countMLAgreement, countNube, countGastro, todasLasVentas.size()));
 
         // Agregar productos manuales
@@ -209,6 +206,9 @@ public class PickitGenerator {
 
         // Construir lista de PickitItems
         List<PickitItem> pickitItems = new ArrayList<>();
+        int skusNoEncontrados = 0;
+        int skusStockInsuficiente = 0;
+        int skusConError = 0;
         for (Map.Entry<String, Double> entry : skuCantidad.entrySet()) {
             String sku = entry.getKey();
             double cantidad = entry.getValue();
@@ -225,12 +225,22 @@ public class PickitGenerator {
             if (sku.startsWith("SIN SKU: ")) {
                 descripcion = sku.substring("SIN SKU: ".length());
                 sku = "SIN SKU";
+                skusConError++;
+            } else if (esSkuConError(sku)) {
+                skusConError++;
             } else if (producto != null) {
                 descripcion = producto.producto();
                 proveedor = producto.proveedor();
                 subRubro = producto.subRubro();
                 unidad = producto.unidad();
                 stockDisponible = producto.stock();
+                if (stockDisponible < cantidad) {
+                    AppLogger.warn("PICKIT - SKU " + sku + " stock insuficiente (pedido: " + (int) cantidad + ", disponible: " + stockDisponible + ")");
+                    skusStockInsuficiente++;
+                }
+            } else {
+                AppLogger.warn("PICKIT - SKU " + sku + " no encontrado en Stock.xlsx");
+                skusNoEncontrados++;
             }
 
             pickitItems.add(new PickitItem(sku, cantidad, descripcion, proveedor, unidad, stockDisponible, subRubro));
@@ -308,7 +318,20 @@ public class PickitGenerator {
         // Paso 12: Generar Excel
         AppLogger.info("PICKIT - Paso 12: Generando Excel Pickit...");
         File resultado = PickitExcelWriter.generar(pickitItems, carrosOrdenes);
-        AppLogger.info("PICKIT - Proceso completado. " + pickitItems.size() + " items generados. Archivo: " + resultado.getAbsolutePath());
+
+        // Resumen de problemas
+        if (skusNoEncontrados > 0 || skusStockInsuficiente > 0 || skusConError > 0) {
+            AppLogger.warn("PICKIT - ========== RESUMEN ==========");
+            if (skusNoEncontrados > 0)
+                AppLogger.warn("PICKIT -   SKUs no encontrados en Stock: " + skusNoEncontrados);
+            if (skusStockInsuficiente > 0)
+                AppLogger.warn("PICKIT -   SKUs con stock insuficiente: " + skusStockInsuficiente);
+            if (skusConError > 0)
+                AppLogger.warn("PICKIT -   SKUs con error: " + skusConError);
+            AppLogger.warn("PICKIT - ==============================");
+        }
+
+        AppLogger.success("PICKIT - Proceso completado. " + pickitItems.size() + " items generados. Archivo: " + resultado.getAbsolutePath());
 
         return resultado;
     }
@@ -332,9 +355,9 @@ public class PickitGenerator {
      */
     public static boolean esSkuConError(String sku) {
         return sku.equals("SIN SKU") ||
-               sku.startsWith("SIN SKU:") ||
-               sku.startsWith("SKU INVALIDO:") ||
-               sku.startsWith("CANT INVALIDA:") ||
-               sku.startsWith("COMBO INVALIDO:");
+                sku.startsWith("SIN SKU:") ||
+                sku.startsWith("SKU INVALIDO:") ||
+                sku.startsWith("CANT INVALIDA:") ||
+                sku.startsWith("COMBO INVALIDO:");
     }
 }

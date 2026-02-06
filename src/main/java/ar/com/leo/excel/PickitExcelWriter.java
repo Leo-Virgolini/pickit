@@ -39,8 +39,8 @@ public class PickitExcelWriter {
         Files.createDirectories(excelDir);
 
         LocalDateTime ahora = LocalDateTime.now();
-        String fecha = ahora.format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
-        File outputFile = excelDir.resolve("pickit_" + fecha + ".xlsx").toFile();
+        String fecha = ahora.format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"));
+        File outputFile = excelDir.resolve("PICKIT_" + fecha + ".xlsx").toFile();
 
         try (XSSFWorkbook workbook = new XSSFWorkbook()) {
             Sheet sheet = workbook.createSheet("PICKIT");

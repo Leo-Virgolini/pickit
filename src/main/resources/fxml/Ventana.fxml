@@ -1,13 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<?import javafx.geometry.Point3D?>
 <?import javafx.scene.Cursor?>
 <?import javafx.scene.control.Button?>
 <?import javafx.scene.control.Label?>
 <?import javafx.scene.control.ProgressIndicator?>
+<?import javafx.scene.control.ScrollPane?>
 <?import javafx.scene.control.TableColumn?>
 <?import javafx.scene.control.TableView?>
-<?import javafx.scene.control.TextArea?>
 <?import javafx.scene.control.TextField?>
 <?import javafx.scene.image.Image?>
 <?import javafx.scene.image.ImageView?>
@@ -15,22 +14,23 @@
 <?import javafx.scene.layout.HBox?>
 <?import javafx.scene.layout.Pane?>
 <?import javafx.scene.text.Font?>
+<?import javafx.scene.text.TextFlow?>
 
-<AnchorPane minHeight="620.0" minWidth="461.0" prefHeight="708.0" prefWidth="832.0" style="-fx-background-color: #242831;" xmlns="http://javafx.com/javafx/24.0.1" xmlns:fx="http://javafx.com/fxml/1" fx:controller="ar.com.leo.fx.VentanaController">
+<AnchorPane minHeight="620.0" minWidth="461.0" prefHeight="837.0" prefWidth="907.0" style="-fx-background-color: #242831;" xmlns="http://javafx.com/javafx/24.0.1" xmlns:fx="http://javafx.com/fxml/1" fx:controller="ar.com.leo.fx.VentanaController">
    <children>
-      <Pane layoutX="14.0" layoutY="11.0" prefHeight="66.0" prefWidth="810.0" style="-fx-background-color: #1c1f28; -fx-background-radius: 5;">
+      <Pane fx:id="paneStock" layoutX="14.0" layoutY="11.0" prefHeight="66.0" prefWidth="885.0" style="-fx-background-color: #1c1f28; -fx-background-radius: 5;">
          <children>
             <Label layoutY="-5.0" prefHeight="16.0" prefWidth="161.0" text="Archivo STOCK:" textFill="WHITE">
                <font>
                   <Font name="Arial Bold" size="13.0" />
                </font>
             </Label>
-            <TextField fx:id="ubicacionStockExcel" editable="false" focusTraversable="false" layoutX="6.0" layoutY="23.0" prefHeight="30.0" prefWidth="796.0" promptText="Stock.xlsx" style="-fx-padding: 0 0 0 35; -fx-background-color: #242831; -fx-text-fill: white;">
+            <TextField fx:id="ubicacionStockExcel" editable="false" focusTraversable="false" layoutX="6.0" layoutY="23.0" prefHeight="30.0" prefWidth="866.0" promptText="Stock.xlsx" style="-fx-padding: 0 0 0 35; -fx-background-color: #242831; -fx-text-fill: white;">
                <font>
                   <Font name="Roboto" size="13.0" />
                </font>
             </TextField>
-            <Button alignment="CENTER" contentDisplay="CENTER" ellipsisString="" graphicTextGap="0.0" layoutX="6.0" layoutY="20.0" mnemonicParsing="false" onAction="#buscarStockExcel" opacity="0.0" prefHeight="43.0" prefWidth="796.0" textFill="#00a40b">
+            <Button alignment="CENTER" contentDisplay="CENTER" ellipsisString="" graphicTextGap="0.0" layoutX="6.0" layoutY="20.0" mnemonicParsing="false" onAction="#buscarStockExcel" opacity="0.0" prefHeight="43.0" prefWidth="866.0" textFill="#00a40b">
                <font>
                   <Font name="System Bold" size="14.0" />
                </font>
@@ -46,19 +46,19 @@
          </children>
       </Pane>
 
-      <Pane layoutX="14.0" layoutY="81.0" prefHeight="66.0" prefWidth="810.0" style="-fx-background-color: #1c1f28; -fx-background-radius: 5;">
+      <Pane fx:id="paneCombos" layoutX="14.0" layoutY="81.0" prefHeight="66.0" prefWidth="885.0" style="-fx-background-color: #1c1f28; -fx-background-radius: 5;">
          <children>
             <Label layoutY="-5.0" prefHeight="16.0" prefWidth="161.0" text="Archivo COMBOS:" textFill="WHITE">
                <font>
                   <Font name="Arial Bold" size="13.0" />
                </font>
             </Label>
-            <TextField fx:id="ubicacionCombosExcel" editable="false" focusTraversable="false" layoutX="6.0" layoutY="23.0" prefHeight="30.0" prefWidth="796.0" promptText="Combos.xls" style="-fx-padding: 0 0 0 35; -fx-background-color: #242831; -fx-text-fill: white;">
+            <TextField fx:id="ubicacionCombosExcel" editable="false" focusTraversable="false" layoutX="6.0" layoutY="23.0" prefHeight="30.0" prefWidth="866.0" promptText="Combos.xls" style="-fx-padding: 0 0 0 35; -fx-background-color: #242831; -fx-text-fill: white;">
                <font>
                   <Font name="Roboto" size="13.0" />
                </font>
             </TextField>
-            <Button alignment="CENTER" contentDisplay="CENTER" ellipsisString="" graphicTextGap="0.0" layoutX="6.0" layoutY="20.0" mnemonicParsing="false" onAction="#buscarCombosExcel" opacity="0.0" prefHeight="43.0" prefWidth="796.0" textFill="#00a40b">
+            <Button alignment="CENTER" contentDisplay="CENTER" ellipsisString="" graphicTextGap="0.0" layoutX="6.0" layoutY="20.0" mnemonicParsing="false" onAction="#buscarCombosExcel" opacity="0.0" prefHeight="43.0" prefWidth="866.0" textFill="#00a40b">
                <font>
                   <Font name="System Bold" size="14.0" />
                </font>
@@ -81,9 +81,9 @@
          </font>
       </Label>
 
-      <Pane layoutX="14.0" layoutY="172.0" prefHeight="214.0" prefWidth="810.0" style="-fx-background-color: #1c1f28; -fx-background-radius: 5;">
+      <Pane fx:id="paneManuales" layoutX="14.0" layoutY="172.0" prefHeight="214.0" prefWidth="885.0" style="-fx-background-color: #1c1f28; -fx-background-radius: 5;">
          <children>
-            <HBox alignment="CENTER_LEFT" layoutX="10.0" layoutY="10.0" spacing="10.0">
+            <HBox alignment="CENTER_LEFT" layoutX="10.0" layoutY="10.0" prefHeight="30.0" prefWidth="866.0" spacing="10.0">
                <children>
                   <Label text="SKU:" textFill="WHITE">
                      <font>
@@ -105,33 +105,69 @@
                         <Font name="Roboto" size="13.0" />
                      </font>
                   </TextField>
-                  <Button fx:id="btnAgregarModificar" mnemonicParsing="false" onAction="#agregarProductoManual" prefHeight="30.0" prefWidth="80.0" style="-fx-background-color: #3a7d44; -fx-background-radius: 5;" text="Agregar" textFill="WHITE">
+                  <Button fx:id="btnAgregarModificar" mnemonicParsing="false" onAction="#agregarProductoManual" prefHeight="30.0" prefWidth="106.0" style="-fx-background-color: #3a7d44; -fx-background-radius: 5;" text="Agregar" textFill="WHITE">
                      <font>
                         <Font name="Arial Bold" size="12.0" />
                      </font>
                      <cursor>
                         <Cursor fx:constant="HAND" />
                      </cursor>
+                     <graphic>
+                        <ImageView fitHeight="16.0" fitWidth="16.0" preserveRatio="true" smooth="false">
+                           <image>
+                              <Image url="@../images/icons8-añadir-40.png" />
+                           </image>
+                        </ImageView>
+                     </graphic>
                   </Button>
-                  <Button mnemonicParsing="false" onAction="#eliminarProductoManual" prefHeight="30.0" prefWidth="80.0" style="-fx-background-color: #7d3a3a; -fx-background-radius: 5;" text="Eliminar" textFill="WHITE">
+                  <Button mnemonicParsing="false" onAction="#eliminarProductoManual" prefHeight="30.0" prefWidth="98.0" style="-fx-background-color: #7d3a3a; -fx-background-radius: 5;" text="Eliminar" textFill="WHITE">
                      <font>
                         <Font name="Arial Bold" size="12.0" />
                      </font>
                      <cursor>
                         <Cursor fx:constant="HAND" />
                      </cursor>
+                     <graphic>
+                        <ImageView fitHeight="16.0" fitWidth="16.0" preserveRatio="true" smooth="false">
+                           <image>
+                              <Image url="@../images/icons8-menos-50.png" />
+                           </image>
+                        </ImageView>
+                     </graphic>
                   </Button>
-                  <Button mnemonicParsing="false" onAction="#limpiarProductosManuales" prefHeight="30.0" prefWidth="100.0" style="-fx-background-color: #5a5a5a; -fx-background-radius: 5;" text="Borrar tabla" textFill="WHITE">
+                  <Button mnemonicParsing="false" onAction="#limpiarProductosManuales" prefHeight="30.0" prefWidth="118.0" style="-fx-background-color: #5a5a5a; -fx-background-radius: 5;" text="Borrar tabla" textFill="WHITE">
                      <font>
                         <Font name="Arial Bold" size="12.0" />
                      </font>
                      <cursor>
                         <Cursor fx:constant="HAND" />
                      </cursor>
+                     <graphic>
+                        <ImageView fitHeight="16.0" fitWidth="16.0" preserveRatio="true" smooth="false">
+                           <image>
+                              <Image url="@../images/icons8-escoba-48.png" />
+                           </image>
+                        </ImageView>
+                     </graphic>
+                  </Button>
+                  <Button mnemonicParsing="false" onAction="#importarProductosExcel" prefHeight="30.0" prefWidth="147.0" style="-fx-background-color: #4a6fa5; -fx-background-radius: 5;" text="Importar Excel" textFill="WHITE">
+                     <font>
+                        <Font name="Arial Bold" size="12.0" />
+                     </font>
+                     <cursor>
+                        <Cursor fx:constant="HAND" />
+                     </cursor>
+                     <graphic>
+                        <ImageView fitHeight="16.0" fitWidth="16.0" preserveRatio="true" smooth="false">
+                           <image>
+                              <Image url="@../images/icon-excel.png" />
+                           </image>
+                        </ImageView>
+                     </graphic>
                   </Button>
                </children>
             </HBox>
-            <TableView fx:id="productosManualTable" layoutX="10.0" layoutY="50.0" prefHeight="161.0" prefWidth="790.0" style="-fx-background-color: #242831;">
+            <TableView fx:id="productosManualTable" layoutX="10.0" layoutY="50.0" prefHeight="161.0" prefWidth="866.0" style="-fx-background-color: #242831;">
                <columns>
                   <TableColumn fx:id="colSku" prefWidth="400.0" text="SKU" />
                   <TableColumn fx:id="colCantidad" prefWidth="380.0" text="Cantidad" />
@@ -146,23 +182,27 @@
          </font>
       </Label>
 
-      <TextArea fx:id="logTextArea" editable="false" layoutX="11.2" layoutY="405.0" prefHeight="240.0" prefWidth="810.0" style="-fx-background-radius: 20; -fx-background-color: #242831;" AnchorPane.leftAnchor="11.2" AnchorPane.rightAnchor="11.200000000000045">
-         <font>
-            <Font name="Roboto" size="14.0" />
-         </font>
-         <rotationAxis>
-            <Point3D />
-         </rotationAxis>
-      </TextArea>
+      <ScrollPane fx:id="logScrollPane" fitToWidth="true" hbarPolicy="NEVER" layoutX="11.2" layoutY="405.0" prefHeight="334.0" prefWidth="810.0" style="-fx-background: #1c1f28; -fx-background-color: #1c1f28; -fx-border-color: transparent;" AnchorPane.leftAnchor="11.0" AnchorPane.rightAnchor="11.0">
+         <content>
+            <TextFlow fx:id="logTextFlow" style="-fx-padding: 8; -fx-background-color: #1c1f28;" />
+         </content>
+      </ScrollPane>
 
-      <ProgressIndicator fx:id="progressIndicator" layoutX="562.0" layoutY="655.0" prefHeight="43.0" prefWidth="43.0" visible="false" />
-      <Button fx:id="pickitButton" alignment="CENTER" layoutX="285.0" layoutY="662.0" mnemonicParsing="false" onAction="#generarPickit" prefHeight="30.0" prefWidth="261.0" style="-fx-background-color: #3a7d44; -fx-background-radius: 5;" text="Generar Pickit y Carros" textAlignment="CENTER" textFill="WHITE">
+      <ProgressIndicator fx:id="progressIndicator" layoutX="665.0" layoutY="762.0" prefHeight="50.0" prefWidth="80.0" visible="false" />
+      <Button fx:id="pickitButton" alignment="CENTER" layoutX="256.0" layoutY="753.0" mnemonicParsing="false" onAction="#generarPickit" prefHeight="69.0" prefWidth="394.0" style="-fx-background-color: #3a7d44; -fx-background-radius: 5;" text="Generar Pickit y Carros" textAlignment="CENTER" textFill="WHITE">
          <font>
-            <Font name="Consolas Bold" size="16.0" />
+            <Font name="Consolas Bold" size="22.0" />
          </font>
          <cursor>
             <Cursor fx:constant="HAND" />
          </cursor>
+         <graphic>
+            <ImageView fitHeight="56.0" fitWidth="54.0" pickOnBounds="true" preserveRatio="true">
+               <image>
+                  <Image url="@../images/icons8-producto-100.png" />
+               </image>
+            </ImageView>
+         </graphic>
       </Button>
    </children>
 </AnchorPane>
