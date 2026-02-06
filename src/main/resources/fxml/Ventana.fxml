@@ -16,7 +16,7 @@
 <?import javafx.scene.layout.Pane?>
 <?import javafx.scene.text.Font?>
 
-<AnchorPane minHeight="620.0" minWidth="461.0" prefHeight="741.0" prefWidth="832.0" style="-fx-background-color: #242831;" xmlns="http://javafx.com/javafx/24.0.1" xmlns:fx="http://javafx.com/fxml/1" fx:controller="ar.com.leo.fx.VentanaController">
+<AnchorPane minHeight="620.0" minWidth="461.0" prefHeight="708.0" prefWidth="832.0" style="-fx-background-color: #242831;" xmlns="http://javafx.com/javafx/24.0.1" xmlns:fx="http://javafx.com/fxml/1" fx:controller="ar.com.leo.fx.VentanaController">
    <children>
       <Pane layoutX="14.0" layoutY="11.0" prefHeight="66.0" prefWidth="810.0" style="-fx-background-color: #1c1f28; -fx-background-radius: 5;">
          <children>
@@ -53,7 +53,7 @@
                   <Font name="Arial Bold" size="13.0" />
                </font>
             </Label>
-            <TextField fx:id="ubicacionCombosExcel" editable="false" focusTraversable="false" layoutX="6.0" layoutY="23.0" prefHeight="30.0" prefWidth="796.0" promptText="Combos.xlsx" style="-fx-padding: 0 0 0 35; -fx-background-color: #242831; -fx-text-fill: white;">
+            <TextField fx:id="ubicacionCombosExcel" editable="false" focusTraversable="false" layoutX="6.0" layoutY="23.0" prefHeight="30.0" prefWidth="796.0" promptText="Combos.xls" style="-fx-padding: 0 0 0 35; -fx-background-color: #242831; -fx-text-fill: white;">
                <font>
                   <Font name="Roboto" size="13.0" />
                </font>
@@ -155,7 +155,7 @@
          </rotationAxis>
       </TextArea>
 
-      <ProgressIndicator fx:id="progressIndicator" layoutX="553.0" layoutY="570.0" prefHeight="43.0" prefWidth="43.0" visible="false" />
+      <ProgressIndicator fx:id="progressIndicator" layoutX="562.0" layoutY="655.0" prefHeight="43.0" prefWidth="43.0" visible="false" />
       <Button fx:id="pickitButton" alignment="CENTER" layoutX="285.0" layoutY="662.0" mnemonicParsing="false" onAction="#generarPickit" prefHeight="30.0" prefWidth="261.0" style="-fx-background-color: #3a7d44; -fx-background-radius: 5;" text="Generar Pickit y Carros" textAlignment="CENTER" textFill="WHITE">
          <font>
             <Font name="Consolas Bold" size="16.0" />

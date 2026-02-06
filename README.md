@@ -7,27 +7,50 @@ Aplicacion de escritorio JavaFX que consolida ventas de multiples canales de e-c
 Recopila automaticamente las ventas pendientes de despacho desde:
 
 - **MercadoLibre** - Ordenes con etiqueta lista para imprimir (`ready_to_print`)
-- **MercadoLibre** - Ordenes con acuerdo con el vendedor (sin nota "impreso")
+- **MercadoLibre** - Ordenes con acuerdo con el vendedor (sin nota "impreso/impresa")
 - **Tienda Nube KT HOGAR** - Ordenes pagadas sin enviar
 - **Tienda Nube KT GASTRO** - Ordenes pagadas sin enviar
+- **Productos manuales** - Agregados desde la interfaz
 
-Luego enriquece los datos con informacion del ERP **DUX** (descripcion, proveedor, stock) y genera un Excel de picking ordenado y formateado.
+Luego enriquece los datos con informacion de los archivos Excel de entrada y obtiene stock en tiempo real desde las APIs, generando un Excel de picking ordenado y formateado.
 
 ## Flujo de ejecucion
 
-1. Inicializar APIs (MercadoLibre, Tienda Nube, DUX)
+1. Inicializar APIs (MercadoLibre, Tienda Nube)
 2. Obtener ventas de las 4 fuentes en paralelo
-3. Consolidar y limpiar SKUs
-4. Expandir combos (un combo se reemplaza por sus componentes)
-5. Agrupar por SKU sumando cantidades
-6. Enriquecer con datos de DUX (descripcion, proveedor, stock disponible)
-7. Leer sectores/unidades desde el Excel PICKIT.xlsm
+3. Agregar productos manuales (si hay)
+4. Consolidar y limpiar SKUs
+5. Expandir combos (un combo se reemplaza por sus componentes)
+6. Agrupar por SKU sumando cantidades
+7. Leer datos de productos desde Stock.xlsx (descripcion, proveedor, sector, stock)
 8. Ordenar por sector, proveedor, sub-rubro y descripcion
-9. Generar Excel con formato de picking
+9. Generar Excel con hojas PICKIT y CARROS
+
+## Archivos Excel de entrada
+
+### Stock.xlsx
+Datos de productos. Primera hoja del archivo.
+- Columna A: SKU
+- Columna B: Descripcion del producto
+- Columna G: Sub-rubro
+- Columna H: Stock
+- Columna L: Unidad/Sector
+- Columna R: Proveedor
+- Datos desde fila 4
+
+### Combos.xls
+Definicion de combos (formato xls o xlsx). Primera hoja del archivo.
+- Columna A: SKU del combo
+- Columna C: SKU del componente
+- Columna E: Cantidad del componente
+- Datos desde fila 4
 
 ## Excel generado
 
 **Archivo:** `Excel/pickit_YYYYMMdd_HHmmss.xlsx`
+
+### Hoja PICKIT
+Lista de picking consolidada.
 
 **Columnas:** SKU | CANT | DESCRIPCION | PROVEEDOR | SECTOR | STOCK
 
@@ -36,34 +59,54 @@ Luego enriquece los datos con informacion del ERP **DUX** (descripcion, proveedo
 - Calibri 14pt, centrado, bordes finos
 - Filas con cantidad > 1: negrita y subrayado
 - Separadores grises cuando cambia el sector
+- Fondo rojo: SKU con error (sin SKU, invalido, combo invalido)
+- Fondo amarillo: producto sin descripcion o sector
 
-## Excel de entrada (PICKIT.xlsm)
+### Hoja CARROS
+Ordenes de MercadoLibre con 2+ SKUs distintos, para preparar en carros separados.
 
-- **Hoja COMBOS**: Define combos (col A = SKU combo, col C = SKU componente, col E = cantidad). Datos desde fila 4.
-- **Hoja STOCK**: Mapeo SKU a sector/unidad (col A = SKU, col L = unidad). Datos desde fila 4.
+**Columnas:** # de venta | Unidades | SKU | Producto | Sector | Carro
+
+**Formato:**
+- Titulo "CARROS KT - dd/MM/yyyy HH:mm"
+- Header verde
+- Fila gris por cada orden con numero de venta y letra de carro (A, B, C...)
+- Filas de items con fondo gris claro
+- Bordes gruesos alrededor de cada grupo de orden
+
+## Productos manuales
+
+Desde la interfaz se pueden agregar productos manualmente:
+- Campo SKU (numerico)
+- Campo Cantidad
+- Boton Agregar/Modificar
+- Boton Eliminar (fila seleccionada)
+- Boton Borrar tabla
+- No permite SKUs duplicados
+- Al seleccionar una fila se puede editar
 
 ## APIs integradas
 
 ### MercadoLibre
 - OAuth 2.0 con renovacion automatica de tokens
-- Busqueda de ordenes por `shipping.status` y `shipping.substatus`
-- Lectura de notas de ordenes para filtrar por "impreso"
+- Busqueda de ordenes por `shipping.status` y `tags`
+- Ordenes "acuerdo vendedor": filtro `tags=no_shipping` + sin nota "impreso/impresa"
+- Lectura de notas de ordenes
 
 ### Tienda Nube
 - Soporte multi-tienda (HOGAR y GASTRO)
-- Filtro: ordenes pagadas y sin enviar
-
-### DUX ERP
-- Consulta individual por codigo de producto
-- Rate limit: ~7 segundos entre requests
-- Obtiene: descripcion, proveedor, sub-rubro, stock disponible (suma de depositos)
+- Filtro: ordenes abiertas, pagadas y sin empaquetar
+  - `payment_status=paid`
+  - `shipping_status=unpacked`
+  - `status=open`
 
 ## Manejo de errores
 
 - Reintentos automaticos con backoff exponencial (401, 429, 5xx, errores de conexion)
-- Rate limiting por API (MercadoLibre: 5 req/s, Tienda Nube: 2 req/s, DUX: 0.143 req/s)
-- Degradacion: si DUX o Tienda Nube no estan disponibles, continua sin esos datos
+- Rate limiting por API (MercadoLibre: 5 req/s, Tienda Nube: 2 req/s)
+- Degradacion: si Tienda Nube no esta disponible, continua sin esos datos
 - Feedback de audio (sonido de exito/error)
+- Marcado visual de errores en Excel (fondo rojo/amarillo)
 
 ## Credenciales
 
@@ -74,15 +117,14 @@ Se almacenan en `%PROGRAMDATA%/SuperMaster/secrets/`:
 | `ml_credentials.json` | Client ID, secret y redirect URI de MercadoLibre |
 | `ml_tokens.json` | Access token y refresh token de MercadoLibre |
 | `nube_tokens.json` | Credenciales por tienda de Tienda Nube |
-| `dux_tokens.json` | Token bearer de DUX |
 
 ## Tecnologias
 
-- Java 25
-- JavaFX 25
-- Apache POI 5.5.1 (Excel)
-- Jackson 3.0.4 (JSON)
-- Google Guava 33.5.0 (rate limiting)
+- Java 21+
+- JavaFX 21+
+- Apache POI (Excel)
+- Jackson (JSON)
+- Google Guava (rate limiting)
 - Maven
 
 ## Build

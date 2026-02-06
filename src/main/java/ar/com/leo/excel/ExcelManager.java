@@ -13,18 +13,17 @@ public class ExcelManager {
 
     public record ComboEntry(String skuComponente, double cantidad) {}
 
-    public record ProductoStock(String producto, String subRubro, String unidad, String proveedor) {}
+    public record ProductoStock(String producto, String subRubro, String unidad, String proveedor, int stock) {}
 
     /**
-     * Lee el archivo Combos.xlsx.
+     * Lee el archivo Combos (xls o xlsx).
      * Col A = SKU combo, Col C = SKU componente, Col E = cantidad por combo.
      * Retorna Map<String, List<ComboEntry>> (SKU combo -> lista de componentes).
      */
     public static Map<String, List<ComboEntry>> obtenerCombos(File combosExcel) throws Exception {
         Map<String, List<ComboEntry>> combos = new LinkedHashMap<>();
 
-        try (OPCPackage opcPackage = OPCPackage.open(combosExcel, PackageAccess.READ);
-             Workbook workbook = new XSSFWorkbook(opcPackage)) {
+        try (Workbook workbook = WorkbookFactory.create(combosExcel)) {
 
             Sheet hoja = workbook.getSheetAt(0);
             if (hoja == null) {
@@ -71,7 +70,7 @@ public class ExcelManager {
 
     /**
      * Lee el archivo Stock.xlsx.
-     * Col A = SKU, Col B = Producto, Col G = Sub Rubro, Col L = Unidad, Col R = Proveedor.
+     * Col A = SKU, Col B = Producto, Col G = Sub Rubro, Col H = Stock, Col L = Unidad, Col R = Proveedor.
      * Retorna Map<String, ProductoStock> (SKU -> datos del producto).
      */
     public static Map<String, ProductoStock> obtenerProductosStock(File stockExcel) throws Exception {
@@ -92,6 +91,7 @@ public class ExcelManager {
                 Cell celdaSku = fila.getCell(0);         // Col A
                 Cell celdaProducto = fila.getCell(1);    // Col B
                 Cell celdaSubRubro = fila.getCell(6);    // Col G
+                Cell celdaStock = fila.getCell(7);       // Col H
                 Cell celdaUnidad = fila.getCell(11);     // Col L
                 Cell celdaProveedor = fila.getCell(17);  // Col R
 
@@ -105,7 +105,17 @@ public class ExcelManager {
                 String unidad = celdaUnidad != null ? getCellValue(celdaUnidad).trim() : "";
                 String proveedor = celdaProveedor != null ? getCellValue(celdaProveedor).trim() : "";
 
-                productos.put(sku, new ProductoStock(producto, subRubro, unidad, proveedor));
+                int stock = 0;
+                if (celdaStock != null) {
+                    String stockStr = getCellValue(celdaStock).trim();
+                    if (!stockStr.isEmpty()) {
+                        try {
+                            stock = (int) Double.parseDouble(stockStr);
+                        } catch (NumberFormatException ignored) {}
+                    }
+                }
+
+                productos.put(sku, new ProductoStock(producto, subRubro, unidad, proveedor, stock));
             }
         }
 

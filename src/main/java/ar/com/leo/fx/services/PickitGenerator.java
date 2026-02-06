@@ -5,7 +5,6 @@ import ar.com.leo.excel.ExcelManager;
 import ar.com.leo.excel.ExcelManager.ComboEntry;
 import ar.com.leo.excel.ExcelManager.ProductoStock;
 import ar.com.leo.excel.PickitExcelWriter;
-import ar.com.leo.dux.DuxApi;
 import ar.com.leo.fx.model.ProductoManual;
 import ar.com.leo.ml.MercadoLibreAPI;
 import ar.com.leo.ml.MercadoLibreAPI.MLOrderResult;
@@ -190,7 +189,7 @@ public class PickitGenerator {
                         ));
                     }
                 }
-                AppLogger.info("PICKIT - Combo expandido: " + venta.getSku() + " → " + componentes.size() + " componentes");
+
             } else {
                 ventasExpandidas.add(venta);
             }
@@ -204,54 +203,9 @@ public class PickitGenerator {
         }
         AppLogger.info("PICKIT - SKUs únicos: " + skuCantidad.size());
 
-        // Paso 10: Leer datos de productos de Stock.xlsx
+        // Paso 10: Leer datos de productos de Stock.xlsx (incluye stock en columna H)
         AppLogger.info("PICKIT - Paso 10: Leyendo datos de productos de Stock.xlsx...");
         Map<String, ProductoStock> productosStock = ExcelManager.obtenerProductosStock(stockExcel);
-
-        // Paso 10b: Obtener stock de MercadoLibre API
-        AppLogger.info("PICKIT - Paso 10b: Obteniendo stock de MercadoLibre...");
-        List<String> skusValidos = skuCantidad.keySet().stream()
-                .filter(sku -> !esSkuConError(sku))
-                .toList();
-        Map<String, Integer> stockML = MercadoLibreAPI.obtenerStockPorSkus(userId, skusValidos);
-        AppLogger.info("PICKIT - Stock ML obtenido para " + stockML.size() + " SKUs");
-
-        // Paso 10c: Para SKUs sin stock en ML, buscar en Tienda Nube
-        AppLogger.info("PICKIT - Paso 10c: Buscando stock faltante en Tienda Nube...");
-        int stockNubeCount = 0;
-        for (String sku : skusValidos) {
-            if (stockML.getOrDefault(sku, -1) < 0) {
-                int stockNube = TiendaNubeApi.obtenerStockPorSku(sku);
-                if (stockNube >= 0) {
-                    stockML.put(sku, stockNube);
-                    stockNubeCount++;
-                }
-            }
-        }
-        if (stockNubeCount > 0) {
-            AppLogger.info("PICKIT - Stock Nube obtenido para " + stockNubeCount + " SKUs");
-        }
-
-        // Paso 10d: Para SKUs sin stock en ML ni Nube, buscar en DUX
-        AppLogger.info("PICKIT - Paso 10d: Buscando stock faltante en DUX...");
-        boolean duxDisponible = DuxApi.inicializar();
-        int stockDuxCount = 0;
-        if (duxDisponible) {
-            for (String sku : skusValidos) {
-                if (stockML.getOrDefault(sku, -1) < 0) {
-                    int stockDux = DuxApi.obtenerStockPorCodigo(sku);
-                    if (stockDux >= 0) {
-                        stockML.put(sku, stockDux);
-                        stockDuxCount++;
-                    }
-                }
-            }
-            if (stockDuxCount > 0) {
-                AppLogger.info("PICKIT - Stock DUX obtenido para " + stockDuxCount + " SKUs");
-            }
-        } else {
-            AppLogger.warn("PICKIT - DUX no disponible, omitiendo búsqueda de stock en DUX");
-        }
 
         // Construir lista de PickitItems
         List<PickitItem> pickitItems = new ArrayList<>();
@@ -265,13 +219,18 @@ public class PickitGenerator {
             String proveedor = "";
             String subRubro = "";
             String unidad = "";
-            int stockDisponible = stockML.getOrDefault(sku, -1);
+            int stockDisponible = 0;
 
-            if (producto != null) {
+            // Si es "SIN SKU: descripcion", extraer la descripción
+            if (sku.startsWith("SIN SKU: ")) {
+                descripcion = sku.substring("SIN SKU: ".length());
+                sku = "SIN SKU";
+            } else if (producto != null) {
                 descripcion = producto.producto();
                 proveedor = producto.proveedor();
                 subRubro = producto.subRubro();
                 unidad = producto.unidad();
+                stockDisponible = producto.stock();
             }
 
             pickitItems.add(new PickitItem(sku, cantidad, descripcion, proveedor, unidad, stockDisponible, subRubro));
@@ -310,20 +269,27 @@ public class PickitGenerator {
             for (OrdenML orden : ordenesGrupo) {
                 for (Venta v : orden.getItems()) {
                     String skuItem = v.getSku();
-                    // Mantener SKUs con error tal como están
-                    boolean esError = esSkuConError(skuItem);
-                    if (!esError && (skuItem.isBlank() || !skuItem.matches("\\d+"))) {
-                        AppLogger.warn("CARROS - SKU inválido en venta " + numeroVenta + ": '" + skuItem + "'");
-                        skuItem = "SKU INVALIDO: " + skuItem;
-                        esError = true;
-                    }
                     String descripcion = "";
                     String sector = "";
-                    if (!esError) {
-                        ProductoStock producto = productosStock.get(skuItem);
-                        if (producto != null) {
-                            descripcion = producto.producto();
-                            sector = producto.unidad();
+
+                    // Si es "SIN SKU: descripcion", extraer la descripción
+                    if (skuItem.startsWith("SIN SKU: ")) {
+                        descripcion = skuItem.substring("SIN SKU: ".length());
+                        skuItem = "SIN SKU";
+                    } else {
+                        // Mantener SKUs con error tal como están
+                        boolean esError = esSkuConError(skuItem);
+                        if (!esError && (skuItem.isBlank() || !skuItem.matches("\\d+"))) {
+                            AppLogger.warn("CARROS - SKU inválido en venta " + numeroVenta + ": '" + skuItem + "'");
+                            skuItem = "SKU INVALIDO: " + skuItem;
+                            esError = true;
+                        }
+                        if (!esError) {
+                            ProductoStock producto = productosStock.get(skuItem);
+                            if (producto != null) {
+                                descripcion = producto.producto();
+                                sector = producto.unidad();
+                            }
                         }
                     }
                     skusDistintos.add(skuItem);
@@ -365,7 +331,8 @@ public class PickitGenerator {
      * Verifica si un SKU tiene un prefijo de error.
      */
     public static boolean esSkuConError(String sku) {
-        return sku.startsWith("SIN SKU:") ||
+        return sku.equals("SIN SKU") ||
+               sku.startsWith("SIN SKU:") ||
                sku.startsWith("SKU INVALIDO:") ||
                sku.startsWith("CANT INVALIDA:") ||
                sku.startsWith("COMBO INVALIDO:");

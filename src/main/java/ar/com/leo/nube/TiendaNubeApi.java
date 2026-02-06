@@ -32,6 +32,23 @@ public class TiendaNubeApi {
 
     private static NubeCredentials credentials;
 
+    // ================== METODO DE PRUEBA ==================
+    public static void main(String[] args) {
+        System.out.println("Iniciando prueba...");
+        System.out.flush();
+        if (!inicializar()) {
+            System.out.println("Error al inicializar credenciales");
+            return;
+        }
+        System.out.println("Credenciales cargadas OK");
+        System.out.flush();
+
+        testObtenerOrdenPorNumero("6296");
+
+        System.out.println("Prueba finalizada");
+        System.out.flush();
+    }
+
     public static boolean inicializar() {
         credentials = cargarCredenciales();
         if (credentials == null || credentials.stores == null || credentials.stores.isEmpty()) {
@@ -60,8 +77,9 @@ public class TiendaNubeApi {
     }
 
     /**
-     * Obtiene todas las ventas pagadas y sin envío de una tienda Nube.
-     * GET /v1/{store_id}/orders?payment_status=paid&shipping_status=unshipped
+     * Obtiene todas las ventas pagadas, abiertas y sin empaquetar de una tienda Nube.
+     * GET /v1/{store_id}/orders?payment_status=paid&shipping_status=unpacked&status=open&aggregates=fulfillment_orders
+     * Filtra client-side por fulfillment_orders con status UNPACKED.
      * Paginación con parámetro page.
      */
     private static List<Venta> obtenerVentas(StoreCredentials store, String label) {
@@ -73,7 +91,7 @@ public class TiendaNubeApi {
         while (hasMore) {
             final int currentPage = page;
             String url = String.format(
-                    "https://api.tiendanube.com/v1/%s/orders?payment_status=paid&shipping_status=unshipped&per_page=%d&page=%d",
+                    "https://api.tiendanube.com/v1/%s/orders?payment_status=paid&shipping_status=unpacked&status=open&aggregates=fulfillment_orders&per_page=%d&page=%d",
                     store.storeId, perPage, currentPage);
 
             Supplier<HttpRequest> requestBuilder = () -> HttpRequest.newBuilder()
@@ -105,6 +123,10 @@ public class TiendaNubeApi {
 
             for (JsonNode order : ordersArray) {
                 long orderId = order.path("id").asLong(0);
+
+                // Filtrar por fulfillment_orders con status UNPACKED
+                if (!tieneFulfillmentUnpacked(order)) continue;
+
                 JsonNode products = order.path("products");
                 if (!products.isArray()) continue;
 
@@ -141,6 +163,7 @@ public class TiendaNubeApi {
 
     /**
      * Obtiene el stock de un producto por SKU buscando en todas las tiendas.
+     *
      * @param sku SKU del producto
      * @return Stock total o -1 si no se encuentra
      */
@@ -203,6 +226,20 @@ public class TiendaNubeApi {
         }
     }
 
+    /**
+     * Verifica si una orden tiene al menos un fulfillment order con status UNPACKED.
+     */
+    private static boolean tieneFulfillmentUnpacked(JsonNode order) {
+        JsonNode fulfillments = order.path("fulfillments");
+        if (!fulfillments.isArray() || fulfillments.isEmpty()) return false;
+        for (JsonNode fo : fulfillments) {
+            if ("unpacked".equalsIgnoreCase(fo.path("status").asString(""))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static StoreCredentials getStore(String storeName) {
         if (credentials == null || credentials.stores == null) return null;
         return credentials.stores.get(storeName);
@@ -218,4 +255,45 @@ public class TiendaNubeApi {
             return null;
         }
     }
+
+    /**
+     * Obtiene una orden específica por número de venta y muestra su JSON completo.
+     */
+    private static void testObtenerOrdenPorNumero(String numeroOrden) {
+        // Intentar en ambas tiendas
+        for (String storeName : List.of("KT HOGAR", "KT GASTRO")) {
+            StoreCredentials store = getStore(storeName);
+            if (store == null) continue;
+
+            String url = String.format(
+                    "https://api.tiendanube.com/v1/%s/orders?q=%s",
+                    store.storeId, numeroOrden);
+
+            try {
+                HttpRequest request = HttpRequest.newBuilder()
+                        .uri(URI.create(url))
+                        .header("Authentication", "bearer " + store.accessToken)
+                        .header("User-Agent", "Pickit")
+                        .header("Content-Type", "application/json")
+                        .GET()
+                        .build();
+
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+                if (response.statusCode() == 200) {
+                    Object json = mapper.readValue(response.body(), Object.class);
+                    if (json instanceof List<?> list && !list.isEmpty()) {
+                        System.out.println("Orden encontrada en " + storeName + ":");
+                        System.out.println(mapper.writerWithDefaultPrettyPrinter().writeValueAsString(json));
+                        System.out.flush();
+                        return;
+                    }
+                }
+            } catch (Exception e) {
+                System.out.println("Error en " + storeName + ": " + e.getMessage());
+            }
+        }
+        System.out.println("Orden no encontrada: " + numeroOrden);
+    }
+
 }

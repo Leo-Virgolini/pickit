@@ -60,6 +60,33 @@ public class VentanaController implements Initializable {
         // Configurar tabla de productos manuales
         colSku.setCellValueFactory(new PropertyValueFactory<>("sku"));
         colCantidad.setCellValueFactory(new PropertyValueFactory<>("cantidad"));
+
+        // Centrar contenido de las columnas
+        colSku.setCellFactory(col -> new TableCell<>() {
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                } else {
+                    setText(item);
+                    setStyle("-fx-alignment: CENTER;");
+                }
+            }
+        });
+        colCantidad.setCellFactory(col -> new TableCell<>() {
+            @Override
+            protected void updateItem(Double item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                } else {
+                    setText(item == Math.floor(item) ? String.valueOf(item.intValue()) : String.valueOf(item));
+                    setStyle("-fx-alignment: CENTER;");
+                }
+            }
+        });
+
         productosManualTable.setItems(productosManualList);
 
         // Listener para cargar datos al seleccionar una fila
@@ -142,8 +169,8 @@ public class VentanaController implements Initializable {
         logTextArea.clear();
 
         FileChooser fileChooser = new FileChooser();
-        fileChooser.setTitle("Elige archivo Combos.xlsx");
-        fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Archivo XLSX", "*.xlsx"));
+        fileChooser.setTitle("Elige archivo Combos");
+        fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Archivo Excel", "*.xls", "*.xlsx"));
 
         String currentPath = ubicacionCombosExcel.getText();
         File lastFile = (currentPath != null && !currentPath.isBlank()) ? new File(currentPath) : null;
@@ -193,7 +220,10 @@ public class VentanaController implements Initializable {
         service.setOnFailed(e -> {
             errorSound.play();
             logTextArea.setStyle("-fx-text-fill: firebrick;");
-            AppLogger.error("Error Pickit: " + service.getException().getLocalizedMessage(), service.getException());
+            Throwable ex = service.getException();
+            String mensaje = ex != null ? ex.getLocalizedMessage() : "Error desconocido";
+            logTextArea.appendText("\n\nERROR: " + mensaje + "\n");
+            AppLogger.error("Error Pickit: " + mensaje, ex);
             pickitButton.setDisable(false);
             progressIndicator.setVisible(false);
         });
