@@ -110,6 +110,15 @@ public class PickitExcelWriter {
             warningStyle.setFillForegroundColor(IndexedColors.LIGHT_YELLOW.getIndex());
             warningStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
 
+            // --- Estilo stock insuficiente (fondo naranja) ---
+            CellStyle stockBajoStyle = workbook.createCellStyle();
+            stockBajoStyle.setFont(fontNormal);
+            stockBajoStyle.setAlignment(HorizontalAlignment.CENTER);
+            stockBajoStyle.setVerticalAlignment(VerticalAlignment.CENTER);
+            setBorders(stockBajoStyle);
+            stockBajoStyle.setFillForegroundColor(IndexedColors.LIGHT_ORANGE.getIndex());
+            stockBajoStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+
             // --- Título "PICKIT KT" con fecha y hora ---
             Font fontTitle = workbook.createFont();
             fontTitle.setFontName("Calibri");
@@ -169,7 +178,6 @@ public class PickitExcelWriter {
                 String unidad = item.getUnidad() != null ? item.getUnidad() : "";
                 boolean esAdvertencia = !esError && (descripcion.isBlank() || unidad.isBlank());
                 boolean destacar = item.getCantidad() > 1;
-
                 CellStyle style;
                 if (esError) {
                     style = errorStyle;
@@ -215,7 +223,8 @@ public class PickitExcelWriter {
                 } else {
                     cellStock.setCellValue(stock);
                 }
-                cellStock.setCellStyle(style);
+                boolean stockInsuficiente = !esError && !esAdvertencia && stock < item.getCantidad();
+                cellStock.setCellStyle(stockInsuficiente ? stockBajoStyle : style);
 
             }
 
