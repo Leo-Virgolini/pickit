@@ -80,22 +80,20 @@ public class TiendaNubeApi {
      * Obtiene todas las ventas pagadas, abiertas y sin empaquetar de una tienda Nube.
      * GET /v1/{store_id}/orders?payment_status=paid&shipping_status=unpacked&status=open&aggregates=fulfillment_orders
      * Filtra client-side por fulfillment_orders con status UNPACKED.
-     * Paginación con parámetro page.
+     * Paginación usando el header Link como recomienda la documentación de Tiendanube.
      */
     private static List<Venta> obtenerVentas(StoreCredentials store, String label) {
         List<Venta> ventas = new ArrayList<>();
-        int page = 1;
-        final int perPage = 200;
-        boolean hasMore = true;
+        String nextUrl = String.format(
+                "https://api.tiendanube.com/v1/%s/orders?payment_status=paid&shipping_status=unpacked&status=open&aggregates=fulfillment_orders&per_page=200&page=1",
+                store.storeId);
 
-        while (hasMore) {
-            final int currentPage = page;
-            String url = String.format(
-                    "https://api.tiendanube.com/v1/%s/orders?payment_status=paid&shipping_status=unpacked&status=open&aggregates=fulfillment_orders&per_page=%d&page=%d",
-                    store.storeId, perPage, currentPage);
+        while (nextUrl != null) {
+            final String currentUrl = nextUrl;
+            nextUrl = null;
 
             Supplier<HttpRequest> requestBuilder = () -> HttpRequest.newBuilder()
-                    .uri(URI.create(url))
+                    .uri(URI.create(currentUrl))
                     .header("Authentication", "bearer " + store.accessToken)
                     .header("User-Agent", "Pickit")
                     .header("Content-Type", "application/json")
@@ -110,14 +108,13 @@ public class TiendaNubeApi {
                     break;
                 }
                 String body = response != null ? response.body() : "sin respuesta";
-                AppLogger.warn("NUBE (" + label + ") - Error al obtener órdenes (página " + currentPage + "): " + body);
+                AppLogger.warn("NUBE (" + label + ") - Error al obtener órdenes: " + body);
                 break;
             }
 
             JsonNode ordersArray = mapper.readTree(response.body());
 
             if (!ordersArray.isArray() || ordersArray.isEmpty()) {
-                hasMore = false;
                 break;
             }
 
@@ -156,15 +153,34 @@ public class TiendaNubeApi {
                 }
             }
 
-            if (ordersArray.size() < perPage) {
-                hasMore = false;
-            } else {
-                page++;
-            }
+            // Obtener la URL de la siguiente página del header Link
+            nextUrl = parseLinkNext(response);
         }
 
         AppLogger.info("NUBE (" + label + ") - Ventas obtenidas: " + ventas.size());
         return ventas;
+    }
+
+    /**
+     * Parsea el header Link de la respuesta HTTP y extrae la URL con rel="next".
+     * Formato esperado: <URL>; rel="next", <URL>; rel="last"
+     * Retorna null si no hay página siguiente.
+     */
+    private static String parseLinkNext(HttpResponse<String> response) {
+        var linkHeader = response.headers().firstValue("Link").orElse(null);
+        if (linkHeader == null) return null;
+
+        for (String part : linkHeader.split(",")) {
+            part = part.trim();
+            if (part.contains("rel=\"next\"")) {
+                int start = part.indexOf('<');
+                int end = part.indexOf('>');
+                if (start >= 0 && end > start) {
+                    return part.substring(start + 1, end);
+                }
+            }
+        }
+        return null;
     }
 
     /**
