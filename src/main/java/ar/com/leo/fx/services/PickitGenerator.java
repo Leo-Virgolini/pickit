@@ -130,7 +130,7 @@ public class PickitGenerator {
                 sku = sku.substring(0, spaceIndex);
             }
             // Quitar caracteres no numéricos al inicio (por si tiene prefijos)
-            sku = sku.replaceAll("^[^0-9]*", "");
+            sku = sku.replaceAll("^[^0-9]*|[^0-9]*$", "");
             venta.setSku(sku);
         }
 
